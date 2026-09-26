@@ -1,0 +1,22 @@
+{
+  "name": "pr-review",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "tauri": "tauri",
+    "test": "bun test src",
+    "typecheck": "tsc --noEmit",
+    "app": "tauri build --bundles app"
+  },
+  "dependencies": {
+    "@pierre/diffs": "1.5.1",
+    "@tauri-apps/api": "2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2",
+    "typescript": "5.9.3",
+    "vite": "7"
+  }
+}

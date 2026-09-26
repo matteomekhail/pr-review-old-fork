@@ -1,0 +1,1087 @@
+import './styles.css';
+import { approvePull, fetchBody, fetchDiff, fetchMergeStates, fetchQueue, type MergeState, mergePull, openInBrowser, type MergeMethod, type PullRequest, type QueueKind } from './github';
+import { DiffView, parseDiff, type DiffStyle, type ParsedFile } from './diffs';
+import { sanitizeHtml } from './sanitize';
+import { CommandRegistry, renderShortcut, type Command } from './commands';
+import { CommandPalette } from './palette';
+import { Layout } from './layout';
+import { isReady, isRecent, isSmall, matchesSmartFilter, sortPulls, type SmartFilter, type SortOrder } from './smart';
+import { assessReadiness, isReadinessAvailable, type ReadinessResult } from './readiness';
+
+interface State {
+  kind: QueueKind;
+  pulls: PullRequest[];
+  filter: string;
+  smartFilter: SmartFilter;
+  sortOrder: SortOrder;
+  checkedIds: Set<string>;
+  selectedId: string | null;
+  activeFileIndex: number;
+  diffStyle: DiffStyle;
+}
+
+const PREFETCH_AHEAD = 3;
+const DIFF_CACHE_LIMIT = 24;
+const QUEUE_REFRESH_MS = 120_000;
+const VIEW_TITLES: Record<QueueKind, string> = { review: 'Review requested', involved: 'Involved', mine: 'Created by me' };
+const MERGE_LABELS: Record<MergeMethod, string> = { squash: 'Squash and merge', merge: 'Merge', rebase: 'Rebase and merge' };
+
+const element = <T extends HTMLElement>(id: string): T => {
+  const found = document.getElementById(id);
+  if (found == null) throw new Error(`missing #${id}`);
+  return found as T;
+};
+
+const dom = {
+  list: element<HTMLOListElement>('pr-list'),
+  filter: element<HTMLInputElement>('filter'),
+  viewTitle: element('view-title'),
+  empty: element('empty'),
+  pr: element('pr'),
+  crumbs: element('crumbs'),
+  statusBar: element('status-bar'),
+  descPane: element('desc-pane'),
+  inspector: element('inspector'),
+  bodySplit: element('pr-body-split'),
+  toggleMode: element<HTMLButtonElement>('toggle-mode'),
+  files: element('files'),
+  fileCount: element('file-count'),
+  diffRoot: element('diff-root'),
+  toggleAll: element<HTMLButtonElement>('toggle-all'),
+  approve: element<HTMLButtonElement>('approve'),
+  merge: element<HTMLButtonElement>('merge'),
+  mergeMethod: element<HTMLSelectElement>('merge-method'),
+  confirm: element<HTMLDialogElement>('confirm'),
+  confirmTitle: element('confirm-title'),
+  confirmText: element('confirm-text'),
+  help: element<HTMLDialogElement>('help'),
+  shortcutList: element('shortcut-list'),
+  sort: element<HTMLSelectElement>('sort'),
+  filterBar: element('filter-bar'),
+  bulkBar: element('bulk-bar'),
+  bulkCount: element('bulk-count'),
+  bulkMerge: element<HTMLButtonElement>('bulk-merge'),
+  bulkApprove: element<HTMLButtonElement>('bulk-approve'),
+  bulkConfirm: element<HTMLDialogElement>('bulk-confirm'),
+  bulkConfirmTitle: element('bulk-confirm-title'),
+  bulkConfirmList: element('bulk-confirm-list'),
+  bulkConfirmNote: element('bulk-confirm-note'),
+  toast: element('toast'),
+};
+
+const state: State = {
+  kind: 'mine',
+  pulls: [],
+  filter: '',
+  smartFilter: (localStorage.getItem('smartFilter') as SmartFilter | null) ?? 'all',
+  sortOrder: (localStorage.getItem('sortOrder') as SortOrder | null) ?? 'smart',
+  checkedIds: new Set<string>(),
+  selectedId: null,
+  activeFileIndex: 0,
+  diffStyle: localStorage.getItem('diffStyle') === 'unified' ? 'unified' : 'split',
+};
+
+const diffCache = new Map<string, Promise<ParsedFile[]>>();
+const queueCache = new Map<QueueKind, PullRequest[]>();
+const diffView = new DiffView(dom.diffRoot, state.diffStyle, { onToggle: (id, isCollapsed) => markFileCollapsed(id, isCollapsed) });
+let currentFiles: ParsedFile[] = [];
+let renderToken = 0;
+let toastTimer: number | undefined;
+
+dom.mergeMethod.value = localStorage.getItem('mergeMethod') ?? 'squash';
+syncMergeLabel();
+
+function syncMergeLabel(): void {
+  dom.merge.innerHTML = `${MERGE_LABELS[dom.mergeMethod.value as MergeMethod]} <kbd>⌘</kbd><kbd>↵</kbd>`;
+}
+
+function toast(message: string, isError = false): void {
+  dom.toast.textContent = message;
+  dom.toast.className = isError ? 'show error' : 'show';
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => (dom.toast.className = ''), isError ? 6000 : 2200);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
+}
+
+function relativeTime(iso: string): string {
+  const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (minutes < 60) return `${Math.max(minutes, 1)}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.round(hours / 24);
+  return days < 30 ? `${days}d` : `${Math.round(days / 30)}mo`;
+}
+
+function diffKey(pull: PullRequest): string {
+  return `${pull.id}:${pull.updatedAt}`;
+}
+
+const bodyCache = new Map<string, Promise<string>>();
+
+function loadBody(pull: PullRequest): Promise<string> {
+  const key = diffKey(pull);
+  const cached = bodyCache.get(key);
+  if (cached != null) return cached;
+  const pending = fetchBody(pull);
+  pending.catch(() => bodyCache.delete(key));
+  bodyCache.set(key, pending);
+  if (bodyCache.size > DIFF_CACHE_LIMIT) bodyCache.delete(bodyCache.keys().next().value ?? '');
+  return pending;
+}
+
+function loadDiff(pull: PullRequest): Promise<ParsedFile[]> {
+  const key = diffKey(pull);
+  const cached = diffCache.get(key);
+  if (cached != null) return cached;
+  const pending = fetchDiff(pull).then((patch) => parseDiff(key, patch));
+  pending.catch(() => diffCache.delete(key));
+  diffCache.set(key, pending);
+  if (diffCache.size > DIFF_CACHE_LIMIT) diffCache.delete(diffCache.keys().next().value ?? '');
+  return pending;
+}
+
+function matchesText(pull: PullRequest, needle: string): boolean {
+  if (needle === '') return true;
+  return `${pull.title} ${pull.repository.nameWithOwner} #${pull.number} ${pull.author?.login ?? ''} ${pull.headRefName}`.toLowerCase().includes(needle);
+}
+
+function visiblePulls(): PullRequest[] {
+  const needle = state.filter.trim().toLowerCase();
+  const now = Date.now();
+  const matching = state.pulls.filter((pull) => matchesSmartFilter(pull, state.smartFilter, now) && matchesText(pull, needle));
+  return sortPulls(matching, state.sortOrder, now, aiScoreFor);
+}
+
+function renderSmartCounts(): void {
+  const now = Date.now();
+  const counts: Record<SmartFilter, number> = {
+    all: state.pulls.length,
+    ready: state.pulls.filter(isReady).length,
+    small: state.pulls.filter(isSmall).length,
+    recent: state.pulls.filter((pull) => isRecent(pull, now)).length,
+  };
+  dom.filterBar.querySelectorAll<HTMLElement>('[data-smart-count]').forEach((badge) => (badge.textContent = String(counts[badge.dataset.smartCount as SmartFilter])));
+  dom.filterBar.querySelectorAll<HTMLElement>('[data-smart]').forEach((chip) => chip.classList.toggle('active', chip.dataset.smart === state.smartFilter));
+  dom.sort.value = state.sortOrder;
+}
+
+function selectedPull(): PullRequest | undefined {
+  return state.pulls.find((pull) => pull.id === state.selectedId);
+}
+
+function statusIcon(pull: PullRequest): string {
+  if (pull.isDraft) return '<span class="status draft" title="Draft"></span>';
+  if (pull.mergeable === 'CONFLICTING') return '<span class="status conflict" title="Conflicts"></span>';
+  if (pull.reviewDecision === 'APPROVED') return '<span class="status approved" title="Approved"></span>';
+  if (pull.reviewDecision === 'CHANGES_REQUESTED') return '<span class="status changes" title="Changes requested"></span>';
+  return '<span class="status open" title="Open"></span>';
+}
+
+function checksIcon(pull: PullRequest): string {
+  switch (pull.checkState) {
+    case 'SUCCESS':
+      return '<span class="check ok" title="Checks passed">✓</span>';
+    case 'FAILURE':
+    case 'ERROR':
+      return '<span class="check bad" title="Checks failed">✕</span>';
+    case 'PENDING':
+    case 'EXPECTED':
+      return '<span class="check wait" title="Checks running">◌</span>';
+    case null:
+      return '';
+    default:
+      return pull.checkState satisfies never;
+  }
+}
+
+function readinessDot(pull: PullRequest): string {
+  const score = aiScoreFor(pull);
+  if (score == null) return '';
+  const percent = Math.round(Math.max(0, Math.min(1, score)) * 100);
+  const toneName = percent >= 65 ? 'ok' : percent >= 40 ? 'wait' : 'bad';
+  return `<span class="ai-score ${toneName}" title="Jev readiness ${percent}%">${percent}</span>`;
+}
+
+function avatar(pull: PullRequest): string {
+  const url = pull.author?.avatarUrl;
+  return url == null ? '<span class="avatar"></span>' : `<img class="avatar" src="${escapeHtml(url)}&s=40" alt="" loading="lazy" />`;
+}
+
+function repoName(pull: PullRequest): string {
+  return pull.repository.nameWithOwner.split('/')[1] ?? pull.repository.nameWithOwner;
+}
+
+function mostCommonRepo(): string | undefined {
+  const counts = new Map<string, number>();
+  state.pulls.forEach((pull) => counts.set(pull.repository.nameWithOwner, (counts.get(pull.repository.nameWithOwner) ?? 0) + 1));
+  return [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0];
+}
+
+function repoTag(pull: PullRequest, primaryRepo: string | undefined): string {
+  if (pull.repository.nameWithOwner === primaryRepo) return '';
+  return `<span class="repo-tag">${escapeHtml(repoName(pull).replace(/^terraform-provider-/, 'tf-'))}</span>`;
+}
+
+function renderCounts(): void {
+  document.querySelectorAll<HTMLElement>('[data-count]').forEach((badge) => {
+    const pulls = queueCache.get(badge.dataset.count as QueueKind);
+    badge.textContent = pulls == null ? '' : String(pulls.length);
+  });
+}
+
+function renderList(): void {
+  const pulls = visiblePulls();
+  const primaryRepo = mostCommonRepo();
+  dom.list.innerHTML = pulls
+    .map(
+      (pull) => `<li data-id="${pull.id}" class="${pull.id === state.selectedId ? 'selected' : ''}${state.checkedIds.has(pull.id) ? ' checked' : ''}">
+        <span class="check-box" data-check="${pull.id}" role="checkbox" aria-checked="${state.checkedIds.has(pull.id)}"></span>
+        ${statusIcon(pull)}
+        <span class="id" title="${escapeHtml(pull.repository.nameWithOwner)}">${repoTag(pull, primaryRepo)}#${pull.number}</span>
+        <span class="t">${escapeHtml(pull.title)}</span>
+        <span class="right">${readinessDot(pull)}${checksIcon(pull)}<span class="delta"><i class="add">+${pull.additions}</i> <i class="del">−${pull.deletions}</i></span><span class="age">${relativeTime(pull.updatedAt)}</span>${avatar(pull)}</span>
+      </li>`,
+    )
+    .join('');
+  renderCounts();
+  renderSmartCounts();
+  renderBulkBar();
+  if (pulls.length > 0) return;
+  dom.pr.hidden = true;
+  dom.empty.hidden = false;
+  dom.empty.textContent = state.pulls.length === 0 ? 'No pull requests here.' : 'No matches.';
+}
+
+function mergeState(pull: PullRequest): { label: string; tone: string } {
+  if (pull.isDraft) return { label: 'Draft', tone: 'muted' };
+  if (pull.mergeable === 'CONFLICTING') return { label: 'Conflicts', tone: 'bad' };
+  switch (pull.mergeStateStatus) {
+    case 'CLEAN':
+    case 'HAS_HOOKS':
+      return { label: 'Ready', tone: 'ok' };
+    case 'UNSTABLE':
+      return { label: 'Checks failing', tone: 'wait' };
+    case 'BLOCKED':
+      return { label: 'Blocked', tone: 'bad' };
+    case 'BEHIND':
+      return { label: 'Behind base', tone: 'wait' };
+    default:
+      return { label: 'Checking…', tone: 'muted' };
+  }
+}
+
+function reviewLabel(pull: PullRequest): { label: string; tone: string } {
+  switch (pull.reviewDecision) {
+    case 'APPROVED':
+      return { label: 'Approved', tone: 'ok' };
+    case 'CHANGES_REQUESTED':
+      return { label: 'Changes requested', tone: 'bad' };
+    case 'REVIEW_REQUIRED':
+      return { label: 'Review required', tone: 'wait' };
+    case null:
+      return { label: 'None', tone: 'muted' };
+    default:
+      return pull.reviewDecision satisfies never;
+  }
+}
+
+function checksLabel(pull: PullRequest): { label: string; tone: string } {
+  switch (pull.checkState) {
+    case 'SUCCESS':
+      return { label: 'Passing', tone: 'ok' };
+    case 'FAILURE':
+    case 'ERROR':
+      return { label: 'Failing', tone: 'bad' };
+    case 'PENDING':
+    case 'EXPECTED':
+      return { label: 'Running', tone: 'wait' };
+    case null:
+      return { label: 'None', tone: 'muted' };
+    default:
+      return pull.checkState satisfies never;
+  }
+}
+
+function property(label: string, value: string, className = ''): string {
+  return `<div class="stat-item ${className}"><span class="k">${label}</span><span class="v">${value}</span></div>`;
+}
+
+function tone({ label, tone: className }: { label: string; tone: string }): string {
+  return `<span class="tone ${className}"><i></i>${escapeHtml(label)}</span>`;
+}
+
+function descriptionHtml(bodyHtml: string): string {
+  return bodyHtml.trim() === '' ? '<p class="muted">No description provided.</p>' : sanitizeHtml(bodyHtml);
+}
+
+function renderDescription(pull: PullRequest): HTMLElement {
+  const wrapper = document.createElement('article');
+  wrapper.className = 'description';
+  const body = '<p class="muted loading-body">Loading description…</p>';
+  wrapper.innerHTML = `
+    <h1>${escapeHtml(pull.title)}</h1>
+    <div class="byline">${avatar(pull)}<b>${escapeHtml(pull.author?.login ?? 'ghost')}</b> opened ${relativeTime(pull.createdAt)} ago · <code>${escapeHtml(pull.headRefName)}</code> → <code>${escapeHtml(pull.baseRefName)}</code></div>
+    <div class="markdown">${body}</div>
+    <div class="files-divider"><span>${pull.changedFiles} files changed</span><span><i class="add">+${pull.additions}</i> <i class="del">−${pull.deletions}</i></span></div>`;
+  return wrapper;
+}
+
+function readinessProperty(pull: PullRequest): string {
+  if (!isAiEnabled) return '';
+  const result = aiResults.get(aiKey(pull));
+  if (result == null) return property('Readiness', `<span class="muted">${aiPending.has(aiKey(pull)) ? 'Assessing…' : '—'}</span>`);
+  const percent = Math.round(Math.max(0, Math.min(1, result.score)) * 100);
+  const toneName = percent >= 65 ? 'ok' : percent >= 40 ? 'wait' : 'bad';
+  return property('Readiness', `<span class="tone ${toneName}" title="evidence ${Math.round(result.evidence * 100)} · open concerns ${Math.round(result.blocker * 100)} · risk ${Math.round(result.risk * 100)} · scope ${Math.round(result.scope * 100)}"><i></i><b>${percent}%</b>&nbsp;${escapeHtml(result.reason)}</span>`, 'wide');
+}
+
+function renderDetailMeta(pull: PullRequest): void {
+  dom.statusBar.innerHTML = [
+    readinessProperty(pull),
+    property('Status', tone(mergeState(pull))),
+    property('Review', tone(reviewLabel(pull))),
+    property('Checks', tone(checksLabel(pull))),
+    property('Author', `${avatar(pull)}${escapeHtml(pull.author?.login ?? 'ghost')}`),
+    property('Branch', `<code title="${escapeHtml(pull.headRefName)}">${escapeHtml(pull.headRefName)}</code><span class="arrow">→</span><code>${escapeHtml(pull.baseRefName)}</code>`, 'wide'),
+    property('Changes', `<i class="add">+${pull.additions}</i>&nbsp;<i class="del">−${pull.deletions}</i>`),
+    property('Updated', `${relativeTime(pull.updatedAt)} ago`),
+  ].join('');
+  dom.merge.disabled = pull.isDraft || pull.mergeable === 'CONFLICTING';
+}
+
+function renderDetail(pull: PullRequest): void {
+  dom.crumbs.innerHTML = `<span class="repo" title="${escapeHtml(pull.repository.nameWithOwner)}">${escapeHtml(repoName(pull))}</span><span class="sep">›</span><span class="cur">#${pull.number}</span>`;
+  renderDetailMeta(pull);
+  const description = renderDescription(pull);
+  if (reviewMode === 'side') {
+    dom.descPane.replaceChildren(description);
+    diffView.setHeader(undefined);
+  } else {
+    dom.descPane.replaceChildren();
+    diffView.setHeader(description);
+  }
+  const token = renderToken;
+  void loadBody(pull).then(
+    (bodyHtml) => {
+      if (token !== renderToken) return;
+      const target = description.querySelector('.markdown');
+      if (target != null) target.innerHTML = descriptionHtml(bodyHtml);
+    },
+    (error: unknown) => {
+      if (token !== renderToken) return;
+      const target = description.querySelector('.markdown');
+      if (target != null) target.innerHTML = `<p class="error">Could not load description: ${escapeHtml(errorMessage(error))}</p>`;
+    },
+  );
+}
+
+function fileLabel(file: ParsedFile): string {
+  const slash = file.diff.name.lastIndexOf('/');
+  const directory = slash >= 0 ? file.diff.name.slice(0, slash + 1) : '';
+  return `<span class="base">${escapeHtml(file.diff.name.slice(slash + 1))}</span><span class="dir">${escapeHtml(directory)}</span>`;
+}
+
+function renderFiles(files: ParsedFile[]): void {
+  dom.fileCount.textContent = String(files.length);
+  dom.files.innerHTML = files
+    .map(
+      (file, index) => `<button data-index="${index}" data-id="${escapeHtml(file.id)}" class="file ${file.diff.type}${diffView.isCollapsed(file.id) ? ' collapsed' : ''}" title="${escapeHtml(file.diff.name)}">
+        <span class="name">${fileLabel(file)}</span><span class="counts"><i class="add">+${file.additions}</i><i class="del">−${file.deletions}</i></span>
+      </button>`,
+    )
+    .join('');
+  syncToggleAll();
+}
+
+function markFileCollapsed(id: string, isCollapsed: boolean): void {
+  dom.files.querySelector(`[data-id="${CSS.escape(id)}"]`)?.classList.toggle('collapsed', isCollapsed);
+  syncToggleAll();
+}
+
+function syncToggleAll(): void {
+  const isAllCollapsed = currentFiles.length > 0 && diffView.collapsedCount() === currentFiles.length;
+  dom.toggleAll.innerHTML = `${isAllCollapsed ? 'Expand all' : 'Collapse all'} <kbd>⇧</kbd><kbd>C</kbd>`;
+}
+
+function setActiveFile(index: number): void {
+  const file = currentFiles[index];
+  if (file == null) return;
+  state.activeFileIndex = index;
+  dom.files.querySelector('.active')?.classList.remove('active');
+  const button = dom.files.querySelector<HTMLElement>(`[data-index="${index}"]`);
+  button?.classList.add('active');
+  button?.scrollIntoView({ block: 'nearest' });
+  if (diffView.isCollapsed(file.id)) diffView.toggle(file.id, false);
+  diffView.scrollToFile(file.id);
+}
+
+function prefetchAround(pull: PullRequest): void {
+  const pulls = visiblePulls();
+  const index = pulls.findIndex((candidate) => candidate.id === pull.id);
+  const neighbours = [...pulls.slice(index + 1, index + 1 + PREFETCH_AHEAD), ...(index > 0 ? [pulls[index - 1]] : [])];
+  window.setTimeout(
+    () =>
+      neighbours.forEach((candidate) => {
+        if (candidate == null) return;
+        void loadDiff(candidate).catch(() => undefined);
+        void loadBody(candidate).catch(() => undefined);
+      }),
+    120,
+  );
+}
+
+async function select(pull: PullRequest): Promise<void> {
+  const token = ++renderToken;
+  state.selectedId = pull.id;
+  state.activeFileIndex = -1;
+  dom.list.querySelector('.selected')?.classList.remove('selected');
+  const row = dom.list.querySelector<HTMLElement>(`[data-id="${pull.id}"]`);
+  row?.classList.add('selected');
+  row?.scrollIntoView({ block: 'nearest' });
+  dom.empty.hidden = true;
+  dom.pr.hidden = false;
+  currentFiles = [];
+  diffView.show([]);
+  renderDetail(pull);
+  dom.files.innerHTML = '<div class="muted pad">Loading…</div>';
+  prefetchAround(pull);
+  try {
+    const files = await loadDiff(pull);
+    if (token !== renderToken) return;
+    currentFiles = files;
+    diffView.show(files);
+    renderFiles(files);
+  } catch (error) {
+    if (token !== renderToken) return;
+    dom.files.innerHTML = `<div class="error pad">${escapeHtml(errorMessage(error))}</div>`;
+  }
+}
+
+function movePull(delta: number): void {
+  const pulls = visiblePulls();
+  if (pulls.length === 0) return;
+  const index = pulls.findIndex((pull) => pull.id === state.selectedId);
+  const next = pulls[Math.min(pulls.length - 1, Math.max(0, index + delta))];
+  if (next != null && next.id !== state.selectedId) void select(next);
+}
+
+const LIST_PAGE_ROWS = 10;
+const DIFF_LINE_PX = 57;
+
+function listPageSize(): number {
+  const rowHeight = dom.list.querySelector<HTMLElement>('li')?.offsetHeight ?? 40;
+  return Math.max(1, Math.floor(dom.list.clientHeight / rowHeight / 2)) || LIST_PAGE_ROWS;
+}
+
+function jumpPull(position: 'first' | 'last'): void {
+  const pulls = visiblePulls();
+  const target = position === 'first' ? pulls[0] : pulls.at(-1);
+  if (target != null && target.id !== state.selectedId) void select(target);
+}
+
+function moveFile(delta: number): void {
+  if (currentFiles.length === 0) return;
+  setActiveFile(Math.min(currentFiles.length - 1, Math.max(0, state.activeFileIndex + delta)));
+}
+
+function toggleCurrentFile(): void {
+  const file = currentFiles[Math.max(0, state.activeFileIndex)];
+  if (file != null) diffView.toggle(file.id);
+}
+
+function toggleAllFiles(): void {
+  diffView.setAllCollapsed(diffView.collapsedCount() !== currentFiles.length);
+}
+
+const mergeStateCache = new Map<string, { updatedAt: string; state: MergeState }>();
+
+const AI_CONCURRENCY = 4;
+const AI_CACHE_KEY = 'jevReadiness.v1';
+const aiResults = new Map<string, ReadinessResult>(Object.entries(JSON.parse(localStorage.getItem(AI_CACHE_KEY) ?? '{}') as Record<string, ReadinessResult>));
+const aiPending = new Set<string>();
+let isAiEnabled = false;
+let aiRenderFrame = 0;
+
+function aiKey(pull: PullRequest): string {
+  return `${pull.id}:${pull.updatedAt}`;
+}
+
+function aiScoreFor(pull: PullRequest): number | undefined {
+  return isAiEnabled ? aiResults.get(aiKey(pull))?.score : undefined;
+}
+
+function persistAiResults(): void {
+  const live = new Set(state.pulls.map(aiKey));
+  const kept = Object.fromEntries([...aiResults.entries()].filter(([key]) => live.has(key)).slice(-400));
+  localStorage.setItem(AI_CACHE_KEY, JSON.stringify(kept));
+}
+
+function scheduleAiRender(): void {
+  cancelAnimationFrame(aiRenderFrame);
+  aiRenderFrame = requestAnimationFrame(() => {
+    const selectedRow = dom.list.querySelector<HTMLElement>('li.selected');
+    const offset = selectedRow == null ? null : selectedRow.offsetTop - dom.list.scrollTop;
+    renderList();
+    const nextRow = dom.list.querySelector<HTMLElement>('li.selected');
+    if (offset != null && nextRow != null) dom.list.scrollTop = nextRow.offsetTop - offset;
+    const pull = selectedPull();
+    if (pull != null) renderDetailMeta(pull);
+    renderAiStatus();
+  });
+}
+
+function renderAiStatus(): void {
+  const badge = document.getElementById('ai-status');
+  if (badge == null) return;
+  if (!isAiEnabled) {
+    badge.textContent = 'Rules';
+    badge.title = 'Smart sort uses built-in rules. Set OPENROUTER_API_KEY to rank with Jev.';
+    badge.className = 'ai-status off';
+    return;
+  }
+  const scored = state.pulls.filter((pull) => aiResults.has(aiKey(pull))).length;
+  badge.textContent = aiPending.size > 0 ? `Jev ${scored}/${state.pulls.length}` : 'Jev';
+  badge.title = 'Smart sort ranks by Jev readiness: review evidence, open concerns, change risk and scope, via OpenRouter.';
+  badge.className = aiPending.size > 0 ? 'ai-status busy' : 'ai-status on';
+}
+
+async function scoreWithJev(pulls: PullRequest[]): Promise<void> {
+  if (!isAiEnabled) return;
+  const queue = pulls.filter((pull) => !pull.isDraft && !aiResults.has(aiKey(pull)) && !aiPending.has(aiKey(pull)));
+  queue.forEach((pull) => aiPending.add(aiKey(pull)));
+  renderAiStatus();
+  const worker = async (): Promise<void> => {
+    for (let pull = queue.shift(); pull != null; pull = queue.shift()) {
+      const key = aiKey(pull);
+      try {
+        aiResults.set(key, await assessReadiness(pull));
+      } catch (error) {
+        console.warn('jev readiness failed', pull.number, errorMessage(error));
+      } finally {
+        aiPending.delete(key);
+        scheduleAiRender();
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: AI_CONCURRENCY }, worker));
+  persistAiResults();
+}
+let mergeStateRenderFrame = 0;
+
+function applyMergeStates(kind: QueueKind, states: MergeState[]): void {
+  const byId = new Map(states.map((mergeState) => [mergeState.id, mergeState]));
+  const pulls = queueCache.get(kind);
+  if (pulls == null) return;
+  const updated = pulls.map((pull) => {
+    const mergeState = byId.get(pull.id);
+    if (mergeState == null) return pull;
+    mergeStateCache.set(pull.id, { updatedAt: pull.updatedAt, state: mergeState });
+    return { ...pull, mergeable: mergeState.mergeable, mergeStateStatus: mergeState.mergeStateStatus };
+  });
+  queueCache.set(kind, updated);
+  if (kind !== state.kind) return;
+  state.pulls = updated;
+  cancelAnimationFrame(mergeStateRenderFrame);
+  mergeStateRenderFrame = requestAnimationFrame(() => {
+    renderList();
+    const pull = selectedPull();
+    if (pull != null) renderDetailMeta(pull);
+  });
+}
+
+function loadMergeStates(kind: QueueKind, pulls: PullRequest[]): Promise<void> {
+  const stale = pulls.filter((pull) => mergeStateCache.get(pull.id)?.updatedAt !== pull.updatedAt).map((pull) => pull.id);
+  if (stale.length === 0) return Promise.resolve();
+  return fetchMergeStates(stale, (states) => applyMergeStates(kind, states));
+}
+
+const inFlight = new Map<QueueKind, Promise<void>>();
+const lastFetchedAt = new Map<QueueKind, number>();
+const MIN_REFRESH_GAP_MS = 20_000;
+
+function refresh(kind: QueueKind, isForced = false): Promise<void> {
+  const running = inFlight.get(kind);
+  if (running != null) return running;
+  if (!isForced && Date.now() - (lastFetchedAt.get(kind) ?? 0) < MIN_REFRESH_GAP_MS) return Promise.resolve();
+  const pending = fetchQueue(kind)
+    .then((pulls) => {
+      lastFetchedAt.set(kind, Date.now());
+      const merged = pulls.map((pull) => mergeStateCache.get(pull.id)?.updatedAt === pull.updatedAt ? { ...pull, ...mergeStateCache.get(pull.id)?.state } : pull);
+      queueCache.set(kind, merged);
+      renderCounts();
+      if (kind === state.kind) applyQueue(merged);
+      if (kind === state.kind) void scoreWithJev(merged);
+      return loadMergeStates(kind, merged);
+    })
+    .catch((error: unknown) => {
+      if (kind !== state.kind) return;
+      toast(`GitHub: ${errorMessage(error).split('\n')[0]}`, true);
+      if (state.pulls.length === 0) dom.empty.textContent = `Could not load: ${errorMessage(error)}`;
+    })
+    .finally(() => inFlight.delete(kind));
+  inFlight.set(kind, pending);
+  return pending;
+}
+
+function applyQueue(pulls: PullRequest[]): void {
+  const previous = selectedPull();
+  state.pulls = pulls;
+  renderList();
+  const stillThere = previous == null ? undefined : pulls.find((pull) => pull.id === previous.id);
+  if (stillThere != null) {
+    if (stillThere.updatedAt !== previous?.updatedAt) void select(stillThere);
+    return;
+  }
+  const first = visiblePulls()[0];
+  if (first != null) void select(first);
+}
+
+function switchKind(kind: QueueKind): void {
+  state.kind = kind;
+  state.checkedIds.clear();
+  state.selectedId = null;
+  dom.viewTitle.textContent = VIEW_TITLES[kind];
+  document.querySelectorAll<HTMLButtonElement>('.views button').forEach((button) => button.classList.toggle('active', button.dataset.kind === kind));
+  state.pulls = queueCache.get(kind) ?? [];
+  renderList();
+  const first = visiblePulls()[0];
+  if (first != null) void select(first);
+  void scoreWithJev(state.pulls);
+  void refresh(kind);
+}
+
+function checkedPulls(): PullRequest[] {
+  return state.pulls.filter((pull) => state.checkedIds.has(pull.id));
+}
+
+function renderBulkBar(): void {
+  const checked = checkedPulls();
+  const hasSelection = checked.length > 0;
+  dom.bulkBar.hidden = !hasSelection;
+  dom.list.classList.toggle('selecting', hasSelection);
+  if (!hasSelection) return;
+  const readyCount = checked.filter(isReady).length;
+  dom.bulkCount.innerHTML = `<b>${checked.length}</b> selected${readyCount < checked.length ? ` · <span class="warn">${checked.length - readyCount} not ready</span>` : ''}`;
+  dom.bulkMerge.disabled = checked.every((pull) => pull.isDraft || pull.mergeable === 'CONFLICTING');
+}
+
+function setChecked(ids: Iterable<string>, isChecked: boolean): void {
+  for (const id of ids) {
+    if (isChecked) state.checkedIds.add(id);
+    else state.checkedIds.delete(id);
+  }
+  dom.list.querySelectorAll<HTMLElement>('li').forEach((row) => {
+    const isRowChecked = state.checkedIds.has(row.dataset.id ?? '');
+    row.classList.toggle('checked', isRowChecked);
+    row.querySelector('.check-box')?.setAttribute('aria-checked', String(isRowChecked));
+  });
+  renderBulkBar();
+}
+
+let checkAnchorId: string | null = null;
+
+function toggleChecked(id: string, isRange: boolean): void {
+  const pulls = visiblePulls();
+  const anchorIndex = pulls.findIndex((pull) => pull.id === checkAnchorId);
+  const targetIndex = pulls.findIndex((pull) => pull.id === id);
+  if (isRange && anchorIndex >= 0 && targetIndex >= 0) {
+    const [start, end] = anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+    setChecked(pulls.slice(start, end + 1).map((pull) => pull.id), true);
+    return;
+  }
+  checkAnchorId = id;
+  setChecked([id], !state.checkedIds.has(id));
+}
+
+function toggleCheckedCurrent(isRange: boolean): void {
+  if (state.selectedId != null) toggleChecked(state.selectedId, isRange);
+}
+
+function extendSelection(delta: number): void {
+  if (state.selectedId == null) return;
+  if (!state.checkedIds.has(state.selectedId)) setChecked([state.selectedId], true);
+  movePull(delta);
+  if (state.selectedId != null) setChecked([state.selectedId], true);
+}
+
+function selectAllVisible(): void {
+  const pulls = visiblePulls();
+  const isAllChecked = pulls.every((pull) => state.checkedIds.has(pull.id));
+  setChecked(pulls.map((pull) => pull.id), !isAllChecked);
+}
+
+function selectReady(): void {
+  setChecked(visiblePulls().filter(isReady).map((pull) => pull.id), true);
+}
+
+function clearChecked(): void {
+  checkAnchorId = null;
+  setChecked([...state.checkedIds], false);
+}
+
+function setSmartFilter(filter: SmartFilter): void {
+  state.smartFilter = state.smartFilter === filter && filter !== 'all' ? 'all' : filter;
+  localStorage.setItem('smartFilter', state.smartFilter);
+  renderList();
+  const first = visiblePulls()[0];
+  if (first != null && !visiblePulls().some((pull) => pull.id === state.selectedId)) void select(first);
+}
+
+function setSortOrder(order: SortOrder): void {
+  state.sortOrder = order;
+  localStorage.setItem('sortOrder', order);
+  renderList();
+}
+
+function cycleSortOrder(): void {
+  const orders: SortOrder[] = ['smart', 'updated', 'size'];
+  const next = orders[(orders.indexOf(state.sortOrder) + 1) % orders.length] ?? 'smart';
+  setSortOrder(next);
+  toast(`Sort: ${dom.sort.selectedOptions[0]?.textContent ?? next}`);
+}
+
+function confirmBulkMerge(pulls: PullRequest[], method: MergeMethod): Promise<boolean> {
+  const notReady = pulls.filter((pull) => !isReady(pull)).length;
+  dom.bulkConfirmTitle.textContent = `${MERGE_LABELS[method]} ${pulls.length} pull request${pulls.length === 1 ? '' : 's'}?`;
+  dom.bulkConfirmList.innerHTML = pulls
+    .map((pull) => `<li>${statusIcon(pull)}<span class="id">#${pull.number}</span><span class="t">${escapeHtml(pull.title)}</span>${isReady(pull) ? '<span class="tone ok"><i></i>Ready</span>' : `<span class="tone wait"><i></i>${escapeHtml(mergeState(pull).label)}</span>`}</li>`)
+    .join('');
+  dom.bulkConfirmNote.textContent = notReady > 0 ? `${notReady} not ready. GitHub will reject any that branch protection blocks; the rest still merge.` : 'Merged one at a time, in this order. Branch protection and merge queues still apply.';
+  dom.bulkConfirm.returnValue = '';
+  dom.bulkConfirm.showModal();
+  return new Promise((resolve) => dom.bulkConfirm.addEventListener('close', () => resolve(dom.bulkConfirm.returnValue === 'ok'), { once: true }));
+}
+
+async function bulkMerge(): Promise<void> {
+  const pulls = checkedPulls().filter((pull) => !pull.isDraft && pull.mergeable !== 'CONFLICTING');
+  if (pulls.length === 0) return;
+  const method = dom.mergeMethod.value as MergeMethod;
+  if (!(await confirmBulkMerge(pulls, method))) return;
+  dom.bulkMerge.disabled = true;
+  const failures: string[] = [];
+  let merged = 0;
+  for (const [index, pull] of pulls.entries()) {
+    toast(`Merging ${index + 1}/${pulls.length}: #${pull.number}`);
+    try {
+      await mergePull(pull, method);
+      merged += 1;
+      state.checkedIds.delete(pull.id);
+      state.pulls = state.pulls.filter((candidate) => candidate.id !== pull.id);
+      renderList();
+    } catch (error) {
+      failures.push(`#${pull.number}: ${errorMessage(error).split('\n')[0]}`);
+    }
+  }
+  toast(failures.length === 0 ? `Merged ${merged} pull requests` : `Merged ${merged}, failed ${failures.length} — ${failures.join(' · ')}`, failures.length > 0);
+  dom.bulkMerge.disabled = false;
+  renderBulkBar();
+  void refresh(state.kind);
+}
+
+async function bulkApprove(): Promise<void> {
+  const pulls = checkedPulls();
+  if (pulls.length === 0) return;
+  dom.bulkApprove.disabled = true;
+  const results = await Promise.allSettled(pulls.map((pull) => approvePull(pull)));
+  const failed = results.filter((result) => result.status === 'rejected').length;
+  toast(failed === 0 ? `Approved ${pulls.length}` : `Approved ${pulls.length - failed}, failed ${failed}`, failed > 0);
+  dom.bulkApprove.disabled = false;
+  void refresh(state.kind);
+}
+
+async function approveSelected(): Promise<void> {
+  const pull = selectedPull();
+  if (pull == null || dom.approve.disabled) return;
+  dom.approve.disabled = true;
+  try {
+    await approvePull(pull);
+    toast(`Approved #${pull.number}`);
+    void refresh(state.kind);
+  } catch (error) {
+    toast(errorMessage(error), true);
+  } finally {
+    dom.approve.disabled = false;
+  }
+}
+
+function confirmMerge(pull: PullRequest, method: MergeMethod): Promise<boolean> {
+  dom.confirmTitle.textContent = `${MERGE_LABELS[method]} #${pull.number}?`;
+  dom.confirmText.innerHTML = `${escapeHtml(pull.title)}<br><span class="muted">${escapeHtml(pull.headRefName)} → ${escapeHtml(pull.baseRefName)} · ${escapeHtml(pull.repository.nameWithOwner)}</span>`;
+  dom.confirm.returnValue = '';
+  dom.confirm.showModal();
+  return new Promise((resolve) => dom.confirm.addEventListener('close', () => resolve(dom.confirm.returnValue === 'ok'), { once: true }));
+}
+
+async function mergeSelected(): Promise<void> {
+  const pull = selectedPull();
+  if (pull == null || dom.merge.disabled) return;
+  const method = dom.mergeMethod.value as MergeMethod;
+  if (!(await confirmMerge(pull, method))) return;
+  dom.merge.disabled = true;
+  try {
+    const result = await mergePull(pull, method);
+    toast(result.trim().split('\n').at(-1) ?? `Merged #${pull.number}`);
+    movePull(1);
+    state.pulls = state.pulls.filter((candidate) => candidate.id !== pull.id);
+    renderList();
+    void refresh(state.kind);
+  } catch (error) {
+    toast(errorMessage(error), true);
+    dom.merge.disabled = false;
+  }
+}
+
+function toggleStyle(): void {
+  state.diffStyle = state.diffStyle === 'split' ? 'unified' : 'split';
+  localStorage.setItem('diffStyle', state.diffStyle);
+  diffView.setStyle(state.diffStyle);
+  toast(state.diffStyle === 'split' ? 'Split view' : 'Unified view');
+}
+
+type ReviewMode = 'stacked' | 'side';
+let reviewMode: ReviewMode = localStorage.getItem('reviewMode') === 'side' ? 'side' : 'stacked';
+
+function applyReviewMode(): void {
+  const isSide = reviewMode === 'side';
+  element('app').classList.toggle('mode-side', isSide);
+  if (isSide) dom.inspector.append(dom.diffRoot);
+  else dom.bodySplit.insertBefore(dom.diffRoot, dom.bodySplit.querySelector('.resizer[data-resize="inspector"]'));
+  dom.toggleMode.innerHTML = `${isSide ? 'Stacked' : 'Side by side'} <kbd>V</kbd>`;
+  const pull = selectedPull();
+  if (pull != null) renderDetail(pull);
+}
+
+function toggleReviewMode(): void {
+  reviewMode = reviewMode === 'side' ? 'stacked' : 'side';
+  localStorage.setItem('reviewMode', reviewMode);
+  applyReviewMode();
+}
+
+const layout = new Layout(element('app'), () => syncPaneButtons());
+const listPane = element('list-pane');
+new ResizeObserver(([entry]) => listPane.classList.toggle('narrow', (entry?.contentRect.width ?? 999) < 400)).observe(listPane);
+const commands = new CommandRegistry();
+const palette = new CommandPalette(commands);
+const hasPull = (): boolean => selectedPull() != null;
+const hasFiles = (): boolean => currentFiles.length > 0;
+
+function cycleMergeMethod(): void {
+  const methods: MergeMethod[] = ['squash', 'merge', 'rebase'];
+  const next = methods[(methods.indexOf(dom.mergeMethod.value as MergeMethod) + 1) % methods.length] ?? 'squash';
+  dom.mergeMethod.value = next;
+  localStorage.setItem('mergeMethod', next);
+  syncMergeLabel();
+  toast(`Merge method: ${MERGE_LABELS[next]}`);
+}
+
+function copyText(text: string, label: string): void {
+  void navigator.clipboard.writeText(text).then(
+    () => toast(`Copied ${label}`),
+    () => toast('Clipboard unavailable', true),
+  );
+}
+
+function syncPaneButtons(): void {
+  document.getElementById('toggle-sidebar')?.classList.toggle('on', !layout.isHidden('sidebar'));
+  document.getElementById('toggle-inspector')?.classList.toggle('on', !layout.isHidden('inspector'));
+}
+
+function openHelp(): void {
+  let section = '';
+  dom.shortcutList.innerHTML = commands
+    .list()
+    .map((command) => {
+      const heading = command.section !== section ? `<h4>${(section = command.section)}</h4>` : '';
+      const keys = command.keys.map(renderShortcut).join('<span class="or">or</span>');
+      return `${heading}<div class="shortcut"><span>${command.title}</span><span class="keys">${keys}</span></div>`;
+    })
+    .join('');
+  dom.help.showModal();
+  dom.help.scrollTop = 0;
+  (document.activeElement as HTMLElement | null)?.blur();
+}
+
+const COMMANDS: Command[] = [
+  { id: 'palette', section: 'General', title: 'Open command menu', keys: ['⌘k', '⌘⇧p'], run: () => palette.open() },
+  { id: 'help', section: 'General', title: 'Keyboard shortcuts', keys: ['?', '⌘/'], run: openHelp },
+  { id: 'filter', section: 'General', title: 'Filter pull requests', keys: ['/', '⌘f'], run: () => dom.filter.focus() },
+  { id: 'refresh', section: 'General', title: 'Refresh', keys: ['r', '⌘r'], run: () => void refresh(state.kind, true) },
+
+  { id: 'smart-all', section: 'Filter', title: 'Show all', aliases: 'clear filter', keys: ['⌥0'], run: () => setSmartFilter('all') },
+  { id: 'smart-ready', section: 'Filter', title: 'Show ready to merge', aliases: 'green approved mergeable', keys: ['⌥1', 'f r'], run: () => setSmartFilter('ready') },
+  { id: 'smart-small', section: 'Filter', title: 'Show small diffs', aliases: 'tiny quick', keys: ['⌥2', 'f s'], run: () => setSmartFilter('small') },
+  { id: 'smart-recent', section: 'Filter', title: 'Show recently updated', aliases: 'new fresh', keys: ['⌥3', 'f u'], run: () => setSmartFilter('recent') },
+  { id: 'sort', section: 'Filter', title: 'Cycle sort (smart / updated / smallest)', aliases: 'order', keys: ['⇧s'], run: cycleSortOrder },
+
+  { id: 'check', section: 'Select', title: 'Select / deselect pull request', aliases: 'check bulk multi', keys: ['e'], run: () => toggleCheckedCurrent(false), isEnabled: hasPull },
+  { id: 'check-down', section: 'Select', title: 'Extend selection down', keys: ['⇧j', '⇧↓'], run: () => extendSelection(1), isEnabled: hasPull },
+  { id: 'check-up', section: 'Select', title: 'Extend selection up', keys: ['⇧k', '⇧↑'], run: () => extendSelection(-1), isEnabled: hasPull },
+  { id: 'check-all', section: 'Select', title: 'Select all visible', keys: ['⌘a'], run: selectAllVisible },
+  { id: 'check-ready', section: 'Select', title: 'Select all ready', aliases: 'green approved', keys: ['⇧r'], run: selectReady },
+  { id: 'check-clear', section: 'Select', title: 'Clear selection', keys: ['esc'], run: clearChecked, isEnabled: () => state.checkedIds.size > 0 },
+  { id: 'bulk-approve', section: 'Select', title: 'Approve selected', aliases: 'bulk lgtm', keys: ['⇧a'], run: () => void bulkApprove(), isEnabled: () => state.checkedIds.size > 0 },
+  { id: 'bulk-merge', section: 'Select', title: 'Merge selected…', aliases: 'bulk squash ship', keys: ['⌘⇧↵'], run: () => void bulkMerge(), isEnabled: () => state.checkedIds.size > 0 },
+
+  { id: 'view-review', section: 'Views', title: 'Go to Review requested', keys: ['⌘1', 'g r'], run: () => switchKind('review') },
+  { id: 'view-involved', section: 'Views', title: 'Go to Involved', keys: ['⌘2', 'g i'], run: () => switchKind('involved') },
+  { id: 'view-mine', section: 'Views', title: 'Go to Created by me', keys: ['⌘3', 'g m'], run: () => switchKind('mine') },
+
+  { id: 'review-mode', section: 'Layout', title: 'Toggle side-by-side (description | diff)', aliases: 'split right panel diff sidebar stacked', keys: ['v', '⌘⇧d'], run: toggleReviewMode },
+  { id: 'toggle-sidebar', section: 'Layout', title: 'Toggle sidebar', aliases: 'hide show pane navigation', keys: ['⌘b'], run: () => layout.toggle('sidebar') },
+  { id: 'toggle-list', section: 'Layout', title: 'Toggle pull request list', aliases: 'hide show pane queue inbox', keys: ['⌘⇧b', '⌘\\'], run: () => layout.toggle('list') },
+  { id: 'toggle-inspector', section: 'Layout', title: 'Toggle details panel', aliases: 'inspector hide show pane properties files', keys: ['⌘i'], run: () => layout.toggle('inspector') },
+  { id: 'focus-mode', section: 'Layout', title: 'Focus mode (hide all panels)', aliases: 'zen fullscreen hide panes', keys: ['⌘.', 'z'], run: () => layout.toggleFocus() },
+  { id: 'reset-layout', section: 'Layout', title: 'Reset layout', aliases: 'panes widths default', keys: ['⌘⇧0'], run: () => layout.reset() },
+
+  { id: 'next-pr', section: 'Navigate', title: 'Next pull request', keys: ['j', '↓', '⌃n'], run: () => movePull(1) },
+  { id: 'prev-pr', section: 'Navigate', title: 'Previous pull request', keys: ['k', '↑', '⌃p'], run: () => movePull(-1) },
+  { id: 'list-half-down', section: 'Navigate', title: 'Half page down in list', aliases: 'vim scroll', keys: ['⌃d'], run: () => movePull(listPageSize()) },
+  { id: 'list-half-up', section: 'Navigate', title: 'Half page up in list', aliases: 'vim scroll', keys: ['⌃u'], run: () => movePull(-listPageSize()) },
+  { id: 'list-page-down', section: 'Navigate', title: 'Page down in list', aliases: 'vim scroll', keys: ['⌃f'], run: () => movePull(listPageSize() * 2) },
+  { id: 'list-page-up', section: 'Navigate', title: 'Page up in list', aliases: 'vim scroll', keys: ['⌃b'], run: () => movePull(-listPageSize() * 2) },
+  { id: 'list-first', section: 'Navigate', title: 'First pull request', aliases: 'vim top', keys: ['g g', 'Home'], run: () => jumpPull('first') },
+  { id: 'list-last', section: 'Navigate', title: 'Last pull request', aliases: 'vim bottom', keys: ['⇧g', 'End'], run: () => jumpPull('last') },
+  { id: 'next-file', section: 'Navigate', title: 'Next file', keys: ['n', ']c', '⌥↓'], run: () => moveFile(1), isEnabled: hasFiles },
+  { id: 'prev-file', section: 'Navigate', title: 'Previous file', keys: ['p', '[c', '⌥↑'], run: () => moveFile(-1), isEnabled: hasFiles },
+  { id: 'description', section: 'Navigate', title: 'Jump to description', keys: ['d', '⌘↑'], run: () => diffView.scrollToTop(), isEnabled: hasPull },
+
+  { id: 'diff-half-down', section: 'Diff', title: 'Half page down in diff', aliases: 'vim scroll', keys: ['⌘d', '⌥d'], run: () => diffView.scrollByPage(0.5), isEnabled: hasPull },
+  { id: 'diff-half-up', section: 'Diff', title: 'Half page up in diff', aliases: 'vim scroll', keys: ['⌘u', '⌥u'], run: () => diffView.scrollByPage(-0.5), isEnabled: hasPull },
+  { id: 'diff-page-down', section: 'Diff', title: 'Page down in diff', aliases: 'vim scroll', keys: ['space', '⌥f'], run: () => diffView.scrollByPage(0.9), isEnabled: hasPull },
+  { id: 'diff-page-up', section: 'Diff', title: 'Page up in diff', aliases: 'vim scroll', keys: ['⇧space', '⌥b'], run: () => diffView.scrollByPage(-0.9), isEnabled: hasPull },
+  { id: 'diff-line-down', section: 'Diff', title: 'Scroll diff down', aliases: 'vim line', keys: ['⌥j', '⌃e'], run: () => diffView.scrollBy(DIFF_LINE_PX), isEnabled: hasPull },
+  { id: 'diff-line-up', section: 'Diff', title: 'Scroll diff up', aliases: 'vim line', keys: ['⌥k', '⌃y'], run: () => diffView.scrollBy(-DIFF_LINE_PX), isEnabled: hasPull },
+  { id: 'diff-bottom', section: 'Diff', title: 'Jump to end of diff', aliases: 'vim bottom', keys: ['⌘↓'], run: () => diffView.scrollToBottom(), isEnabled: hasPull },
+  { id: 'toggle-file', section: 'Diff', title: 'Collapse / expand file', aliases: 'fold unfold hide', keys: ['x', 'o'], run: toggleCurrentFile, isEnabled: hasFiles },
+  { id: 'toggle-all', section: 'Diff', title: 'Collapse / expand all files', aliases: 'fold unfold hide', keys: ['⇧c'], run: toggleAllFiles, isEnabled: hasFiles },
+  { id: 'diff-style', section: 'Diff', title: 'Toggle split / unified diff', aliases: 'side by side inline view', keys: ['s', '⌘⌥s'], run: toggleStyle },
+
+  { id: 'approve', section: 'Pull request', title: 'Approve', aliases: 'lgtm review accept', keys: ['a'], run: () => void approveSelected(), isEnabled: hasPull },
+  { id: 'merge', section: 'Pull request', title: 'Merge…', aliases: 'squash ship land', keys: ['⌘↵', 'm'], run: () => void mergeSelected(), isEnabled: hasPull },
+  { id: 'merge-method', section: 'Pull request', title: 'Cycle merge method', keys: ['⇧m'], run: cycleMergeMethod },
+  { id: 'open', section: 'Pull request', title: 'Open on GitHub', keys: ['⌘⇧o', 'g o'], run: () => { const pull = selectedPull(); if (pull != null) void openInBrowser(pull.url); }, isEnabled: hasPull },
+  { id: 'copy-url', section: 'Pull request', title: 'Copy link', keys: ['⌘⇧c', 'y'], run: () => { const pull = selectedPull(); if (pull != null) copyText(pull.url, 'link'); }, isEnabled: hasPull },
+  { id: 'copy-branch', section: 'Pull request', title: 'Copy branch name', keys: ['⌘⇧.', 'b'], run: () => { const pull = selectedPull(); if (pull != null) copyText(pull.headRefName, 'branch'); }, isEnabled: hasPull },
+];
+
+const SEQUENCE_TIMEOUT_MS = 900;
+const isSequenceShortcut = (shortcut: string): boolean => shortcut.includes(' ') || /^[[\]][a-z]$/.test(shortcut);
+const sequenceCommands = COMMANDS.filter((command) => command.keys.some(isSequenceShortcut));
+let pendingPrefix: string | null = null;
+let prefixTimer: number | undefined;
+
+commands.add(...COMMANDS.map((command) => ({ ...command, keys: command.keys.filter((shortcut) => !isSequenceShortcut(shortcut)) })));
+
+const SEQUENCE_PREFIXES = new Set(['g', 'f', '[', ']']);
+
+function handleSequence(event: KeyboardEvent): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey) return false;
+  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+  if (pendingPrefix != null) {
+    const shortcut = `${pendingPrefix} ${key}`;
+    const bracketShortcut = `${pendingPrefix}${key}`;
+    pendingPrefix = null;
+    window.clearTimeout(prefixTimer);
+    const command = sequenceCommands.find((candidate) => candidate.keys.includes(shortcut) || candidate.keys.includes(bracketShortcut));
+    if (command == null) return false;
+    event.preventDefault();
+    command.run();
+    return true;
+  }
+  if (!SEQUENCE_PREFIXES.has(key) || (event.shiftKey && key !== '[' && key !== ']')) return false;
+  pendingPrefix = key;
+  prefixTimer = window.setTimeout(() => (pendingPrefix = null), SEQUENCE_TIMEOUT_MS);
+  event.preventDefault();
+  return true;
+}
+
+document.addEventListener('keydown', (event) => {
+  if (event.isComposing || palette.isOpen || dom.confirm.open || dom.help.open || dom.bulkConfirm.open) return;
+  const target = event.target;
+  const isTyping = target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement;
+  if (isTyping && (event.key === 'Escape' || (event.key === 'Enter' && !event.metaKey))) {
+    (target as HTMLElement).blur();
+    event.preventDefault();
+    return;
+  }
+  if (!isTyping && handleSequence(event)) return;
+  commands.handle(event, isTyping);
+});
+
+dom.list.addEventListener('click', (event) => {
+  const target = event.target as HTMLElement;
+  const row = target.closest<HTMLElement>('li');
+  const rowId = row?.dataset.id;
+  if (rowId != null && (target.closest('.check-box') != null || event.metaKey || event.shiftKey)) {
+    event.preventDefault();
+    toggleChecked(rowId, event.shiftKey);
+    return;
+  }
+  const id = rowId;
+  const pull = state.pulls.find((candidate) => candidate.id === id);
+  if (pull != null) void select(pull);
+});
+
+dom.files.addEventListener('click', (event) => {
+  const index = Number((event.target as HTMLElement).closest<HTMLElement>('button')?.dataset.index);
+  if (Number.isInteger(index)) setActiveFile(index);
+});
+
+document.getElementById('pr-body-split')?.addEventListener('click', (event) => {
+  const link = (event.target as HTMLElement).closest?.('.description a');
+  if (!(link instanceof HTMLAnchorElement)) return;
+  event.preventDefault();
+  if (link.href.startsWith('https://github.com/')) void openInBrowser(link.href);
+});
+
+document.querySelectorAll<HTMLButtonElement>('.views button').forEach((button) =>
+  button.addEventListener('click', () => switchKind(button.dataset.kind as QueueKind)),
+);
+dom.filter.addEventListener('input', () => {
+  state.filter = dom.filter.value;
+  renderList();
+});
+dom.toggleAll.addEventListener('click', toggleAllFiles);
+element('toggle-sidebar').addEventListener('click', () => layout.toggle('sidebar'));
+element('toggle-inspector').addEventListener('click', () => layout.toggle('inspector'));
+element('open-palette').addEventListener('click', () => palette.open());
+element('open-help').addEventListener('click', openHelp);
+dom.toggleMode.addEventListener('click', toggleReviewMode);
+applyReviewMode();
+dom.filterBar.addEventListener('click', (event) => {
+  const chip = (event.target as HTMLElement).closest<HTMLElement>('[data-smart]');
+  if (chip != null) setSmartFilter(chip.dataset.smart as SmartFilter);
+});
+dom.sort.addEventListener('change', () => setSortOrder(dom.sort.value as SortOrder));
+element('bulk-ready').addEventListener('click', selectReady);
+element('bulk-clear').addEventListener('click', clearChecked);
+dom.bulkApprove.addEventListener('click', () => void bulkApprove());
+dom.bulkMerge.addEventListener('click', () => void bulkMerge());
+syncPaneButtons();
+dom.approve.addEventListener('click', () => void approveSelected());
+dom.merge.addEventListener('click', () => void mergeSelected());
+dom.mergeMethod.addEventListener('change', () => {
+  localStorage.setItem('mergeMethod', dom.mergeMethod.value);
+  syncMergeLabel();
+});
+window.addEventListener('focus', () => void refresh(state.kind));
+window.setInterval(() => {
+  if (document.visibilityState === 'visible') void refresh(state.kind);
+}, QUEUE_REFRESH_MS);
+
+void isReadinessAvailable().then((isAvailable) => {
+  isAiEnabled = isAvailable;
+  renderAiStatus();
+  if (isAvailable) void scoreWithJev(state.pulls);
+});
+
+void refresh(state.kind, true).then(() => {
+  (['mine', 'review', 'involved'] satisfies QueueKind[]).filter((kind) => kind !== state.kind).forEach((kind) => void refresh(kind, true));
+});

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PR Review</title>
+    <link rel="icon" href="/favicon.png" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="sidebar">
+        <div class="drag"></div>
+        <div class="workspace"><img class="logo" src="/favicon.png" alt="" /><span>Pull requests</span></div>
+        <nav class="views">
+          <button data-kind="review"><span class="icon">◎</span>Review requested<span class="count" data-count="review"></span></button>
+          <button data-kind="involved"><span class="icon">◇</span>Involved<span class="count" data-count="involved"></span></button>
+          <button data-kind="mine" class="active"><span class="icon">◐</span>Created by me<span class="count" data-count="mine"></span></button>
+        </nav>
+        <div class="sidebar-foot">
+          <button id="open-palette" class="foot-button">Command menu <span class="keys"><kbd>⌘</kbd><kbd>K</kbd></span></button>
+          <button id="open-help" class="foot-button">Shortcuts <span class="keys"><kbd>?</kbd></span></button>
+        </div>
+      </aside>
+      <div class="resizer" data-resize="sidebar" title="Drag to resize · double-click to reset"></div>
+
+      <section id="list-pane">
+        <header class="pane-head drag-region">
+          <h2 id="view-title">Created by me</h2>
+          <div class="search"><span>⌕</span><input id="filter" placeholder="Filter" spellcheck="false" autocomplete="off" /><kbd>/</kbd></div>
+        </header>
+        <div class="filter-bar" id="filter-bar">
+          <button data-smart="all" class="chip active">All <span class="chip-count" data-smart-count="all"></span></button>
+          <button data-smart="ready" class="chip" title="Checks green, mergeable, no changes requested"><i class="dot ok"></i>Ready <span class="chip-count" data-smart-count="ready"></span></button>
+          <button data-smart="small" class="chip" title="150 changed lines or fewer">Small <span class="chip-count" data-smart-count="small"></span></button>
+          <button data-smart="recent" class="chip" title="Updated in the last 48 hours">Recent <span class="chip-count" data-smart-count="recent"></span></button>
+          <span id="ai-status" class="ai-status off">Rules</span>
+          <select id="sort" class="sort" title="Sort">
+            <option value="smart">Smart</option>
+            <option value="updated">Updated</option>
+            <option value="size">Smallest</option>
+          </select>
+        </div>
+        <ol id="pr-list"></ol>
+        <div id="bulk-bar" hidden>
+          <span id="bulk-count"></span>
+          <button id="bulk-ready" class="ghost" title="Select every Ready PR  ⇧R">Select ready <kbd>⇧</kbd><kbd>R</kbd></button>
+          <button id="bulk-clear" class="ghost" title="Clear selection  Esc">Clear <kbd>esc</kbd></button>
+          <button id="bulk-approve" class="ghost" title="Approve selected  ⇧A">Approve <kbd>⇧</kbd><kbd>A</kbd></button>
+          <button id="bulk-merge" class="primary" title="Merge selected  ⌘⇧↵">Merge <kbd>⌘</kbd><kbd>⇧</kbd><kbd>↵</kbd></button>
+        </div>
+      </section>
+      <div class="resizer" data-resize="list" title="Drag to resize · double-click to reset"></div>
+
+      <main id="detail">
+        <div id="empty" class="empty">Loading…</div>
+        <section id="pr" hidden>
+          <header id="pr-head" class="drag-region">
+            <div class="head-left">
+              <button class="icon-button" id="toggle-sidebar" title="Toggle sidebar  ⌘B">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><line x1="5.5" y1="2.5" x2="5.5" y2="13.5" stroke="currentColor"/></svg>
+              </button>
+              <div class="crumbs" id="crumbs"></div>
+            </div>
+            <div class="actions">
+              <button id="toggle-mode" class="ghost" title="Side-by-side: description left, diff right  V">Side by side <kbd>V</kbd></button>
+              <button id="toggle-all" class="ghost" title="Collapse or expand all files  ⇧C">Collapse all <kbd>⇧</kbd><kbd>C</kbd></button>
+              <button id="approve" class="ghost" title="Approve  A">Approve <kbd>A</kbd></button>
+              <div class="split-button">
+                <button id="merge" class="primary" title="Merge  ⌘↵">Squash and merge <kbd>⌘</kbd><kbd>↵</kbd></button>
+                <select id="merge-method" title="Merge method">
+                  <option value="squash">Squash</option>
+                  <option value="merge">Merge commit</option>
+                  <option value="rebase">Rebase</option>
+                </select>
+              </div>
+              <button class="icon-button" id="toggle-inspector" title="Toggle details panel  ⌘I">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><line x1="10.5" y1="2.5" x2="10.5" y2="13.5" stroke="currentColor"/></svg>
+              </button>
+            </div>
+          </header>
+          <div id="status-bar" class="status-bar"></div>
+          <div id="pr-body-split">
+            <div id="desc-pane"></div>
+            <div class="resizer" data-resize="description" title="Drag to resize · double-click to reset"></div>
+            <div id="diff-root"></div>
+            <div class="resizer" data-resize="inspector" title="Drag to resize · double-click to reset"></div>
+            <aside id="inspector">
+              <section class="file-tree">
+                <div class="section-title"><span>Files</span><span id="file-count" class="muted"></span></div>
+                <nav id="files"></nav>
+              </section>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" role="status"></div>
+
+    <dialog id="confirm">
+      <form method="dialog">
+        <div class="dialog-title" id="confirm-title"></div>
+        <p id="confirm-text"></p>
+        <menu>
+          <button value="cancel" class="ghost">Cancel <kbd>esc</kbd></button>
+          <button value="ok" class="primary" autofocus>Merge <kbd>↵</kbd></button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="bulk-confirm">
+      <form method="dialog">
+        <div class="dialog-title" id="bulk-confirm-title"></div>
+        <ol id="bulk-confirm-list" class="bulk-list"></ol>
+        <p class="muted" id="bulk-confirm-note"></p>
+        <menu>
+          <button value="cancel" class="ghost">Cancel <kbd>esc</kbd></button>
+          <button value="ok" class="primary" autofocus>Merge all <kbd>↵</kbd></button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="help">
+      <form method="dialog">
+        <div class="dialog-title">Keyboard shortcuts</div>
+        <div id="shortcut-list" class="shortcut-list"></div>
+        <menu><button value="close" class="ghost">Close <kbd>esc</kbd></button></menu>
+      </form>
+    </dialog>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
