@@ -47,14 +47,25 @@ bun run typecheck
 
 ## Keys (highlights)
 
+Vim motions work the same in every pane; the modifier picks the pane.
+
+| Motion | List `⌃` | Middle pane `⌥` | Right pane `⌘` |
+| --- | --- | --- | --- |
+| Half page down / up | `⌃D` / `⌃U` | `⌥D` / `⌥U` | `⌘D` / `⌘U` |
+| Page down / up | `⌃F` / `⌃B` | `⌥F` / `⌥B` | `⌘F` / `⌘B` |
+| Line down / up | `⌃E` / `⌃Y` (or `⌃N` / `⌃P`) | `⌥E` / `⌥Y` (or `⌥J` / `⌥K`) | `⌘E` / `⌘Y` |
+| Top / bottom | `⌃G` / `⌃⇧G` | `⌥G` / `⌥⇧G` | `⌘G` / `⌘⇧G` |
+
+The middle pane is the diff in stacked mode and the description in side-by-side mode (`V`). The right pane is the file list in stacked mode and the diff in side-by-side mode.
+
 | Area | Keys |
 | --- | --- |
-| Queue | `J`/`K` next/prev · `⌃D`/`⌃U` half page · `⌃F`/`⌃B` page · `gg`/`G` first/last |
-| Diff | `⌘D`/`⌘U` half page · `Space`/`⇧Space` page · `⌥J`/`⌥K` or `⌃E`/`⌃Y` scroll · `N`/`P` file · `X` collapse |
+| Queue | `J`/`K` next/prev · `gg`/`G` first/last · `Space`/`⇧Space` page the middle pane |
+| Files | `N`/`P` or `]c`/`[c` next/prev file · `X` collapse · `⇧C` collapse all · `S` split/unified |
 | Filters | `⌥1` Ready · `⌥2` Small · `⌥3` Recent · `⌥0` All · `⇧S` sort |
 | Select | `E` toggle · `⇧J`/`⇧K` extend · `⇧R` all ready · `⌘A` all · `Esc` clear |
 | Act | `A` approve · `⌘↵` merge · `⇧A` bulk approve · `⌘⇧↵` bulk merge |
-| Layout | `V` side by side · `⌘B` sidebar · `⌘⇧B` list · `⌘I` details · `⌘.` focus |
+| Layout | `V` side by side · `⌘\` sidebar · `⌘⇧\` list · `⌘I` details · `⌘.` focus |
 | General | `⌘K` commands · `?` shortcuts · `/` filter · `R` refresh |
 
 ## License

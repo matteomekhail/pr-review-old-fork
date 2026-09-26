@@ -106,9 +106,7 @@ export class DiffView {
   }
 
   scrollBy(pixels: number): void {
-    const top = Math.max(0, Math.min(this.root.scrollHeight - this.root.clientHeight, this.root.scrollTop + pixels));
-    this.view.scrollTo({ type: 'position', position: top, behavior: 'instant' });
-    this.root.scrollTop = top;
+    this.root.scrollTop = Math.max(0, Math.min(this.root.scrollHeight - this.root.clientHeight, this.root.scrollTop + pixels));
   }
 
   scrollByPage(fraction: number): void {

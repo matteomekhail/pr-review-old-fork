@@ -473,7 +473,7 @@ function movePull(delta: number): void {
 }
 
 const LIST_PAGE_ROWS = 10;
-const DIFF_LINE_PX = 57;
+const DIFF_LINE_PX = 60;
 
 function listPageSize(): number {
   const rowHeight = dom.list.querySelector<HTMLElement>('li')?.offsetHeight ?? 40;
@@ -484,6 +484,59 @@ function jumpPull(position: 'first' | 'last'): void {
   const pulls = visiblePulls();
   const target = position === 'first' ? pulls[0] : pulls.at(-1);
   if (target != null && target.id !== state.selectedId) void select(target);
+}
+
+type PaneTarget = 'list' | 'middle' | 'right';
+type VimMotion = 'half-down' | 'half-up' | 'page-down' | 'page-up' | 'line-down' | 'line-up' | 'top' | 'bottom';
+
+const PANE_MODIFIER: Record<PaneTarget, string> = { list: '⌃', middle: '⌥', right: '⌘' };
+const PANE_LABEL: Record<PaneTarget, string> = { list: 'list', middle: 'middle pane', right: 'right pane' };
+const MOTION_KEYS: Record<VimMotion, string> = { 'half-down': 'd', 'half-up': 'u', 'page-down': 'f', 'page-up': 'b', 'line-down': 'e', 'line-up': 'y', top: 'g', bottom: '⇧g' };
+const MOTION_TITLE: Record<VimMotion, string> = { 'half-down': 'Half page down', 'half-up': 'Half page up', 'page-down': 'Page down', 'page-up': 'Page up', 'line-down': 'Scroll down', 'line-up': 'Scroll up', top: 'Top', bottom: 'Bottom' };
+const EXTRA_MOTION_KEYS: Partial<Record<PaneTarget, Partial<Record<VimMotion, string[]>>>> = {
+  list: { 'line-down': ['⌃n'], 'line-up': ['⌃p'] },
+  middle: { 'line-down': ['⌥j'], 'line-up': ['⌥k'] },
+};
+
+function paneElement(pane: Exclude<PaneTarget, 'list'>): HTMLElement {
+  if (reviewMode === 'side') return pane === 'middle' ? dom.descPane : dom.diffRoot;
+  return pane === 'middle' ? dom.diffRoot : dom.files;
+}
+
+function scrollPane(pane: Exclude<PaneTarget, 'list'>, motion: VimMotion): void {
+  const target = paneElement(pane);
+  const page = target.clientHeight;
+  const deltas: Record<VimMotion, number> = {
+    'half-down': page * 0.5, 'half-up': -page * 0.5, 'page-down': page * 0.9, 'page-up': -page * 0.9,
+    'line-down': DIFF_LINE_PX, 'line-up': -DIFF_LINE_PX, top: -target.scrollHeight, bottom: target.scrollHeight,
+  };
+  if (target === dom.diffRoot) diffView.scrollBy(deltas[motion]);
+  else target.scrollTop = Math.max(0, Math.min(target.scrollHeight - target.clientHeight, target.scrollTop + deltas[motion]));
+}
+
+function moveList(motion: VimMotion): void {
+  const half = listPageSize();
+  const steps: Record<VimMotion, number> = { 'half-down': half, 'half-up': -half, 'page-down': half * 2, 'page-up': -half * 2, 'line-down': 1, 'line-up': -1, top: -Infinity, bottom: Infinity };
+  const step = steps[motion];
+  if (step === -Infinity) return jumpPull('first');
+  if (step === Infinity) return jumpPull('last');
+  movePull(step);
+}
+
+function vimCommands(): Command[] {
+  const panes: PaneTarget[] = ['list', 'middle', 'right'];
+  const motions = Object.keys(MOTION_KEYS) as VimMotion[];
+  return panes.flatMap((pane) =>
+    motions.map((motion): Command => ({
+      id: `vim-${pane}-${motion}`,
+      section: `Vim · ${PANE_LABEL[pane]} (${PANE_MODIFIER[pane]})`,
+      title: `${MOTION_TITLE[motion]} in ${PANE_LABEL[pane]}`,
+      aliases: 'vim scroll',
+      keys: [`${PANE_MODIFIER[pane]}${MOTION_KEYS[motion]}`, ...(EXTRA_MOTION_KEYS[pane]?.[motion] ?? [])],
+      run: () => (pane === 'list' ? moveList(motion) : scrollPane(pane, motion)),
+      isEnabled: pane === 'list' ? undefined : hasPull,
+    })),
+  );
 }
 
 function moveFile(delta: number): void {
@@ -908,10 +961,12 @@ function openHelp(): void {
   (document.activeElement as HTMLElement | null)?.blur();
 }
 
+const VIM_COMMANDS = vimCommands();
+
 const COMMANDS: Command[] = [
   { id: 'palette', section: 'General', title: 'Open command menu', keys: ['⌘k', '⌘⇧p'], run: () => palette.open() },
   { id: 'help', section: 'General', title: 'Keyboard shortcuts', keys: ['?', '⌘/'], run: openHelp },
-  { id: 'filter', section: 'General', title: 'Filter pull requests', keys: ['/', '⌘f'], run: () => dom.filter.focus() },
+  { id: 'filter', section: 'General', title: 'Filter pull requests', keys: ['/'], run: () => dom.filter.focus() },
   { id: 'refresh', section: 'General', title: 'Refresh', keys: ['r', '⌘r'], run: () => void refresh(state.kind, true) },
 
   { id: 'smart-all', section: 'Filter', title: 'Show all', aliases: 'clear filter', keys: ['⌥0'], run: () => setSmartFilter('all') },
@@ -934,31 +989,23 @@ const COMMANDS: Command[] = [
   { id: 'view-mine', section: 'Views', title: 'Go to Created by me', keys: ['⌘3', 'g m'], run: () => switchKind('mine') },
 
   { id: 'review-mode', section: 'Layout', title: 'Toggle side-by-side (description | diff)', aliases: 'split right panel diff sidebar stacked', keys: ['v', '⌘⇧d'], run: toggleReviewMode },
-  { id: 'toggle-sidebar', section: 'Layout', title: 'Toggle sidebar', aliases: 'hide show pane navigation', keys: ['⌘b'], run: () => layout.toggle('sidebar') },
-  { id: 'toggle-list', section: 'Layout', title: 'Toggle pull request list', aliases: 'hide show pane queue inbox', keys: ['⌘⇧b', '⌘\\'], run: () => layout.toggle('list') },
+  { id: 'toggle-sidebar', section: 'Layout', title: 'Toggle sidebar', aliases: 'hide show pane navigation', keys: ['⌘\\'], run: () => layout.toggle('sidebar') },
+  { id: 'toggle-list', section: 'Layout', title: 'Toggle pull request list', aliases: 'hide show pane queue inbox', keys: ['⌘⇧\\'], run: () => layout.toggle('list') },
   { id: 'toggle-inspector', section: 'Layout', title: 'Toggle details panel', aliases: 'inspector hide show pane properties files', keys: ['⌘i'], run: () => layout.toggle('inspector') },
   { id: 'focus-mode', section: 'Layout', title: 'Focus mode (hide all panels)', aliases: 'zen fullscreen hide panes', keys: ['⌘.', 'z'], run: () => layout.toggleFocus() },
   { id: 'reset-layout', section: 'Layout', title: 'Reset layout', aliases: 'panes widths default', keys: ['⌘⇧0'], run: () => layout.reset() },
 
-  { id: 'next-pr', section: 'Navigate', title: 'Next pull request', keys: ['j', '↓', '⌃n'], run: () => movePull(1) },
-  { id: 'prev-pr', section: 'Navigate', title: 'Previous pull request', keys: ['k', '↑', '⌃p'], run: () => movePull(-1) },
-  { id: 'list-half-down', section: 'Navigate', title: 'Half page down in list', aliases: 'vim scroll', keys: ['⌃d'], run: () => movePull(listPageSize()) },
-  { id: 'list-half-up', section: 'Navigate', title: 'Half page up in list', aliases: 'vim scroll', keys: ['⌃u'], run: () => movePull(-listPageSize()) },
-  { id: 'list-page-down', section: 'Navigate', title: 'Page down in list', aliases: 'vim scroll', keys: ['⌃f'], run: () => movePull(listPageSize() * 2) },
-  { id: 'list-page-up', section: 'Navigate', title: 'Page up in list', aliases: 'vim scroll', keys: ['⌃b'], run: () => movePull(-listPageSize() * 2) },
+  { id: 'next-pr', section: 'Navigate', title: 'Next pull request', keys: ['j', '↓'], run: () => movePull(1) },
+  { id: 'prev-pr', section: 'Navigate', title: 'Previous pull request', keys: ['k', '↑'], run: () => movePull(-1) },
+  { id: 'page-diff-down', section: 'Navigate', title: 'Page down (middle pane)', keys: ['space'], run: () => scrollPane('middle', 'page-down'), isEnabled: hasPull },
+  { id: 'page-diff-up', section: 'Navigate', title: 'Page up (middle pane)', keys: ['⇧space'], run: () => scrollPane('middle', 'page-up'), isEnabled: hasPull },
   { id: 'list-first', section: 'Navigate', title: 'First pull request', aliases: 'vim top', keys: ['g g', 'Home'], run: () => jumpPull('first') },
   { id: 'list-last', section: 'Navigate', title: 'Last pull request', aliases: 'vim bottom', keys: ['⇧g', 'End'], run: () => jumpPull('last') },
   { id: 'next-file', section: 'Navigate', title: 'Next file', keys: ['n', ']c', '⌥↓'], run: () => moveFile(1), isEnabled: hasFiles },
   { id: 'prev-file', section: 'Navigate', title: 'Previous file', keys: ['p', '[c', '⌥↑'], run: () => moveFile(-1), isEnabled: hasFiles },
   { id: 'description', section: 'Navigate', title: 'Jump to description', keys: ['d', '⌘↑'], run: () => diffView.scrollToTop(), isEnabled: hasPull },
 
-  { id: 'diff-half-down', section: 'Diff', title: 'Half page down in diff', aliases: 'vim scroll', keys: ['⌘d', '⌥d'], run: () => diffView.scrollByPage(0.5), isEnabled: hasPull },
-  { id: 'diff-half-up', section: 'Diff', title: 'Half page up in diff', aliases: 'vim scroll', keys: ['⌘u', '⌥u'], run: () => diffView.scrollByPage(-0.5), isEnabled: hasPull },
-  { id: 'diff-page-down', section: 'Diff', title: 'Page down in diff', aliases: 'vim scroll', keys: ['space', '⌥f'], run: () => diffView.scrollByPage(0.9), isEnabled: hasPull },
-  { id: 'diff-page-up', section: 'Diff', title: 'Page up in diff', aliases: 'vim scroll', keys: ['⇧space', '⌥b'], run: () => diffView.scrollByPage(-0.9), isEnabled: hasPull },
-  { id: 'diff-line-down', section: 'Diff', title: 'Scroll diff down', aliases: 'vim line', keys: ['⌥j', '⌃e'], run: () => diffView.scrollBy(DIFF_LINE_PX), isEnabled: hasPull },
-  { id: 'diff-line-up', section: 'Diff', title: 'Scroll diff up', aliases: 'vim line', keys: ['⌥k', '⌃y'], run: () => diffView.scrollBy(-DIFF_LINE_PX), isEnabled: hasPull },
-  { id: 'diff-bottom', section: 'Diff', title: 'Jump to end of diff', aliases: 'vim bottom', keys: ['⌘↓'], run: () => diffView.scrollToBottom(), isEnabled: hasPull },
+  ...VIM_COMMANDS,
   { id: 'toggle-file', section: 'Diff', title: 'Collapse / expand file', aliases: 'fold unfold hide', keys: ['x', 'o'], run: toggleCurrentFile, isEnabled: hasFiles },
   { id: 'toggle-all', section: 'Diff', title: 'Collapse / expand all files', aliases: 'fold unfold hide', keys: ['⇧c'], run: toggleAllFiles, isEnabled: hasFiles },
   { id: 'diff-style', section: 'Diff', title: 'Toggle split / unified diff', aliases: 'side by side inline view', keys: ['s', '⌘⌥s'], run: toggleStyle },
