@@ -74,9 +74,9 @@ export class Lightbox {
     this.dialog.id = 'lightbox';
     this.dialog.innerHTML = `
       <div class="lb-top"><span class="lb-counter"></span><span class="lb-caption"></span>
-        <span class="lb-actions"><button class="lb-open" title="Open in browser  O">Open <kbd>O</kbd></button><button class="lb-close" title="Close  Esc">Close <kbd>esc</kbd></button></span></div>
+        <span class="lb-actions"><button class="lb-open" title="Open in browser  O">Open <kbd>O</kbd></button><button class="lb-close" title="Close  Esc / Q">Close <kbd>esc</kbd></button></span></div>
       <div class="lb-stage"></div>
-      <button class="lb-nav lb-prev" title="Previous  ←">‹</button><button class="lb-nav lb-next" title="Next  →">›</button>`;
+      <button class="lb-nav lb-prev" title="Previous  ← / H / K">‹</button><button class="lb-nav lb-next" title="Next  → / L / J">›</button>`;
     document.body.append(this.dialog);
     this.stage = this.dialog.querySelector('.lb-stage') as HTMLElement;
     this.caption = this.dialog.querySelector('.lb-caption') as HTMLElement;
@@ -108,6 +108,12 @@ export class Lightbox {
 
   close(): void {
     this.dialog.close();
+  }
+
+  private jump(index: number): void {
+    if (this.items.length === 0) return;
+    this.index = Math.max(0, Math.min(this.items.length - 1, index));
+    this.render();
   }
 
   private step(delta: number): void {
@@ -169,23 +175,42 @@ export class Lightbox {
     }
   }
 
+  private pendingG = false;
+
   private readonly handleKey = (event: KeyboardEvent): void => {
+    const half = Math.max(1, Math.floor(this.items.length / 2));
+    const ctrlHandlers: Record<string, () => void> = { d: () => this.step(half), u: () => this.step(-half), f: () => this.jump(this.items.length - 1), b: () => this.jump(0) };
     const handlers: Record<string, () => void> = {
       ArrowRight: () => this.step(1),
       ArrowDown: () => this.step(1),
       l: () => this.step(1),
       j: () => this.step(1),
+      n: () => this.step(1),
       ArrowLeft: () => this.step(-1),
       ArrowUp: () => this.step(-1),
       h: () => this.step(-1),
       k: () => this.step(-1),
+      p: () => this.step(-1),
+      G: () => this.jump(this.items.length - 1),
+      Home: () => this.jump(0),
+      End: () => this.jump(this.items.length - 1),
       o: () => this.openCurrent(),
       z: () => this.toggleZoom(),
       ' ': () => this.toggleZoom(),
+      q: () => this.close(),
     };
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
-    const handler = handlers[event.key];
+    if (event.metaKey || event.altKey) return;
+    const key = event.key.length === 1 && !event.shiftKey ? event.key.toLowerCase() : event.key;
+    let handler: (() => void) | undefined;
+    if (event.ctrlKey) handler = ctrlHandlers[event.key.toLowerCase()];
+    else if (key === 'g') {
+      if (this.pendingG) handler = () => this.jump(0);
+      this.pendingG = !this.pendingG;
+      window.setTimeout(() => (this.pendingG = false), 900);
+      event.preventDefault();
+    } else handler = handlers[key];
     if (handler == null) return;
+    this.pendingG = false;
     event.preventDefault();
     event.stopPropagation();
     handler();

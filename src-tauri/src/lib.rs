@@ -186,14 +186,37 @@ async fn approve(repo: String, number: u64) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn merge(repo: String, number: u64, method: MergeMethod) -> Result<String, String> {
+async fn merge_queue(repo: String, base: String) -> Result<String, String> {
     validate_repo(&repo)?;
+    if base.is_empty() || base.len() > 255 || base.starts_with('-') || base.chars().any(|character| character.is_whitespace() || character.is_control()) {
+        return Err("invalid base branch".to_string());
+    }
+    let (owner, name) = repo.split_once('/').ok_or("invalid repository")?;
+    let query = "query($owner: String!, $name: String!, $branch: String!) { repository(owner: $owner, name: $name) { mergeQueue(branch: $branch) { url configuration { mergeMethod } } } }";
+    gh(&[
+        "api", "graphql",
+        "-f", &format!("query={query}"),
+        "-F", &format!("owner={owner}"),
+        "-F", &format!("name={name}"),
+        "-f", &format!("branch={base}"),
+    ])
+    .await
+}
+
+#[tauri::command]
+async fn merge(repo: String, number: u64, method: MergeMethod, queued: bool) -> Result<String, String> {
+    validate_repo(&repo)?;
+    let number = number.to_string();
+    if queued {
+        let output = gh(&["pr", "merge", &number, "-R", &repo]).await?;
+        return Ok(if output.trim().is_empty() { format!("Added #{number} to the merge queue") } else { output });
+    }
     let flag = match method {
         MergeMethod::Squash => "--squash",
         MergeMethod::Merge => "--merge",
         MergeMethod::Rebase => "--rebase",
     };
-    let output = gh(&["pr", "merge", &number.to_string(), "-R", &repo, flag]).await?;
+    let output = gh(&["pr", "merge", &number, "-R", &repo, flag]).await?;
     Ok(if output.trim().is_empty() { "Merge requested".to_string() } else { output })
 }
 
@@ -290,7 +313,7 @@ async fn open_in_browser(url: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![queue, merge_states, body, diff, approve, merge, open_in_browser, review_context, readiness_available, readiness])
+        .invoke_handler(tauri::generate_handler![queue, merge_queue, merge_states, body, diff, approve, merge, open_in_browser, review_context, readiness_available, readiness])
         .run(tauri::generate_context!())
         .expect("error while running PR Review");
 }

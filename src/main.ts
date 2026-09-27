@@ -1,5 +1,5 @@
 import './styles.css';
-import { approvePull, fetchBody, fetchDiff, fetchMergeStates, fetchQueue, type MergeState, mergePull, openInBrowser, type MergeMethod, type PullRequest, type QueueKind } from './github';
+import { approvePull, usesMergeQueue, fetchBody, fetchDiff, fetchMergeStates, fetchQueue, type MergeState, mergePull, openInBrowser, type MergeMethod, type PullRequest, type QueueKind } from './github';
 import { DiffView, parseDiff, type DiffStyle, type ParsedFile } from './diffs';
 import { sanitizeHtml } from './sanitize';
 import { CommandRegistry, renderShortcut, type Command } from './commands';
@@ -92,8 +92,13 @@ let toastTimer: number | undefined;
 dom.mergeMethod.value = localStorage.getItem('mergeMethod') ?? 'squash';
 syncMergeLabel();
 
+let isSelectedQueued = false;
+
 function syncMergeLabel(): void {
-  dom.merge.innerHTML = `${MERGE_LABELS[dom.mergeMethod.value as MergeMethod]} <kbd>⌘</kbd><kbd>↵</kbd>`;
+  const label = isSelectedQueued ? 'Merge when ready' : MERGE_LABELS[dom.mergeMethod.value as MergeMethod];
+  dom.merge.innerHTML = `${label} <kbd>⌘</kbd><kbd>↵</kbd>`;
+  dom.merge.title = isSelectedQueued ? 'Add to merge queue  ⌘↵' : 'Merge  ⌘↵';
+  dom.mergeMethod.hidden = isSelectedQueued;
 }
 
 function toast(message: string, isError = false): void {
@@ -365,7 +370,18 @@ function renderDetailMeta(pull: PullRequest): void {
   dom.merge.disabled = pull.isDraft || pull.mergeable === 'CONFLICTING';
 }
 
+function syncQueueState(pull: PullRequest): void {
+  isSelectedQueued = false;
+  syncMergeLabel();
+  void usesMergeQueue(pull).then((isQueued) => {
+    if (selectedPull()?.id !== pull.id) return;
+    isSelectedQueued = isQueued;
+    syncMergeLabel();
+  });
+}
+
 function renderDetail(pull: PullRequest): void {
+  syncQueueState(pull);
   dom.crumbs.innerHTML = `<span class="repo" title="${escapeHtml(pull.repository.nameWithOwner)}">${escapeHtml(repoName(pull))}</span><span class="sep">›</span><span class="cur">#${pull.number}</span>`;
   renderDetailMeta(pull);
   const description = renderDescription(pull);
@@ -826,12 +842,14 @@ async function bulkMerge(): Promise<void> {
   const pulls = checkedPulls().filter((pull) => !pull.isDraft && pull.mergeable !== 'CONFLICTING');
   if (pulls.length === 0) return;
   const method = dom.mergeMethod.value as MergeMethod;
-  if (!(await confirmBulkMerge(pulls, method))) return;
+  const queueFlags = await Promise.all(pulls.map(usesMergeQueue));
+  const isAllQueued = queueFlags.every(Boolean);
+  if (!isAllQueued && !(await confirmBulkMerge(pulls, method))) return;
   dom.bulkMerge.disabled = true;
   const failures: string[] = [];
   let merged = 0;
   for (const [index, pull] of pulls.entries()) {
-    toast(`Merging ${index + 1}/${pulls.length}: #${pull.number}`);
+    toast(`${isAllQueued ? 'Queueing' : 'Merging'} ${index + 1}/${pulls.length}: #${pull.number}`);
     try {
       await mergePull(pull, method);
       merged += 1;
@@ -842,7 +860,8 @@ async function bulkMerge(): Promise<void> {
       failures.push(`#${pull.number}: ${errorMessage(error).split('\n')[0]}`);
     }
   }
-  toast(failures.length === 0 ? `Merged ${merged} pull requests` : `Merged ${merged}, failed ${failures.length} — ${failures.join(' · ')}`, failures.length > 0);
+  const verb = isAllQueued ? 'Queued' : 'Merged';
+  toast(failures.length === 0 ? `${verb} ${merged} pull requests` : `${verb} ${merged}, failed ${failures.length} — ${failures.join(' · ')}`, failures.length > 0);
   dom.bulkMerge.disabled = false;
   renderBulkBar();
   void refresh(state.kind);
@@ -886,11 +905,12 @@ async function mergeSelected(): Promise<void> {
   const pull = selectedPull();
   if (pull == null || dom.merge.disabled) return;
   const method = dom.mergeMethod.value as MergeMethod;
-  if (!(await confirmMerge(pull, method))) return;
+  const isQueued = await usesMergeQueue(pull);
+  if (!isQueued && !(await confirmMerge(pull, method))) return;
   dom.merge.disabled = true;
   try {
     const result = await mergePull(pull, method);
-    toast(result.trim().split('\n').at(-1) ?? `Merged #${pull.number}`);
+    toast(isQueued ? `#${pull.number} added to the merge queue` : (result.trim().split('\n').at(-1) ?? `Merged #${pull.number}`));
     movePull(1);
     state.pulls = state.pulls.filter((candidate) => candidate.id !== pull.id);
     renderList();

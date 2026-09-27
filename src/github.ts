@@ -94,8 +94,26 @@ export function approvePull(pull: PullRequest): Promise<string> {
   return invoke<string>('approve', { repo: pull.repository.nameWithOwner, number: pull.number });
 }
 
-export function mergePull(pull: PullRequest, method: MergeMethod): Promise<string> {
-  return invoke<string>('merge', { repo: pull.repository.nameWithOwner, number: pull.number, method });
+interface MergeQueueResponse {
+  data?: { repository: { mergeQueue: { url: string } | null } | null };
+}
+
+const mergeQueueCache = new Map<string, Promise<boolean>>();
+
+export function usesMergeQueue(pull: PullRequest): Promise<boolean> {
+  const key = `${pull.repository.nameWithOwner}#${pull.baseRefName}`;
+  const cached = mergeQueueCache.get(key);
+  if (cached != null) return cached;
+  const pending = invoke<string>('merge_queue', { repo: pull.repository.nameWithOwner, base: pull.baseRefName })
+    .then((raw) => (JSON.parse(raw) as MergeQueueResponse).data?.repository?.mergeQueue != null)
+    .catch(() => false);
+  mergeQueueCache.set(key, pending);
+  return pending;
+}
+
+export async function mergePull(pull: PullRequest, method: MergeMethod): Promise<string> {
+  const queued = await usesMergeQueue(pull);
+  return invoke<string>('merge', { repo: pull.repository.nameWithOwner, number: pull.number, method, queued });
 }
 
 export function openInBrowser(url: string): Promise<void> {

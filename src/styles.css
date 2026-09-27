@@ -344,3 +344,6 @@ img { -webkit-user-drag: none; }
 #list-pane.narrow .chip-count { display: none; }
 #list-pane.narrow .ai-status { padding: 0 5px; font-size: 0; gap: 0; }
 #list-pane.narrow .ai-status::before { margin: 0; }
+
+.split-button select[hidden] { display: none; }
+.split-button select[hidden] ~ *, .split-button:has(select[hidden]) button.primary { border-radius: var(--radius); }

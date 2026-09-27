@@ -66,6 +66,7 @@ Vim motions work the same in every pane; the modifier picks the pane.
 | Select | `E` toggle · `⇧J`/`⇧K` extend · `⇧R` all ready · `⌘A` all · `Esc` clear |
 | Act | `A` approve · `⌘↵` merge · `⇧A` bulk approve · `⌘⇧↵` bulk merge |
 | Layout | `V` side by side · `⌘\` sidebar · `⌘⇧\` list · `⌘I` details · `⌘.` focus |
+| Lightbox | `I` open first media · `H`/`L` or `J`/`K` or `←`/`→` cycle · `gg`/`G` first/last · `⌃D`/`⌃U` skip half · `Z` zoom · `O` open · `Q`/`Esc` close |
 | General | `/` commands · `?` shortcuts · `F` filter · `R` refresh |
 
 ## License
