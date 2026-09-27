@@ -946,7 +946,6 @@ function toggleReviewMode(): void {
   reviewMode = reviewMode === 'side' ? 'stacked' : 'side';
   localStorage.setItem('reviewMode', reviewMode);
   applyReviewMode();
-enableWindowDrag();
 }
 
 const layout = new Layout(element('app'), () => syncPaneButtons());
@@ -1167,6 +1166,7 @@ element('open-palette').addEventListener('click', () => palette.open());
 element('open-help').addEventListener('click', openHelp);
 dom.toggleMode.addEventListener('click', toggleReviewMode);
 applyReviewMode();
+enableWindowDrag();
 dom.filterBar.addEventListener('click', (event) => {
   const chip = (event.target as HTMLElement).closest<HTMLElement>('[data-smart]');
   if (chip != null) setSmartFilter(chip.dataset.smart as SmartFilter);
