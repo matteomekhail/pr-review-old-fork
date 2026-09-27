@@ -12,13 +12,13 @@
         <div class="drag" data-tauri-drag-region></div>
         <div class="workspace" data-tauri-drag-region><img class="logo" src="/favicon.png" alt="" /><span>Pull requests</span></div>
         <nav class="views">
-          <button data-kind="review"><span class="icon">◎</span>Review requested<span class="count" data-count="review"></span></button>
-          <button data-kind="involved"><span class="icon">◇</span>Involved<span class="count" data-count="involved"></span></button>
-          <button data-kind="mine" class="active"><span class="icon">◐</span>Created by me<span class="count" data-count="mine"></span></button>
+          <button data-kind="review" title="Review requested  ⌘1"><span class="icon">◎</span>Review requested<span class="count" data-count="review"></span></button>
+          <button data-kind="involved" title="Involved  ⌘2"><span class="icon">◇</span>Involved<span class="count" data-count="involved"></span></button>
+          <button data-kind="mine" class="active" title="Created by me  ⌘3"><span class="icon">◐</span>Created by me<span class="count" data-count="mine"></span></button>
         </nav>
         <div class="sidebar-foot">
-          <button id="open-palette" class="foot-button">Command menu <span class="keys"><kbd>/</kbd></span></button>
-          <button id="open-help" class="foot-button">Shortcuts <span class="keys"><kbd>?</kbd></span></button>
+          <button id="open-palette" class="foot-button" title="Command menu  /">Command menu <span class="keys"><kbd>/</kbd></span></button>
+          <button id="open-help" class="foot-button" title="Keyboard shortcuts  ?">Shortcuts <span class="keys"><kbd>?</kbd></span></button>
         </div>
       </aside>
       <div class="resizer" data-resize="sidebar" title="Drag to resize · double-click to reset"></div>
@@ -26,15 +26,15 @@
       <section id="list-pane">
         <header class="pane-head drag-region" data-tauri-drag-region>
           <h2 id="view-title" data-tauri-drag-region>Created by me</h2>
-          <div class="search"><span>⌕</span><input id="filter" placeholder="Filter" spellcheck="false" autocomplete="off" /><kbd>F</kbd></div>
+          <div class="search"><span>⌕</span><input id="filter" title="Filter pull requests  F" placeholder="Filter" spellcheck="false" autocomplete="off" /><kbd>F</kbd></div>
         </header>
         <div class="filter-bar" id="filter-bar">
-          <button data-smart="all" class="chip active">All <span class="chip-count" data-smart-count="all"></span></button>
-          <button data-smart="ready" class="chip" title="Checks green, mergeable, no changes requested"><i class="dot ok"></i>Ready <span class="chip-count" data-smart-count="ready"></span></button>
-          <button data-smart="small" class="chip" title="150 changed lines or fewer">Small <span class="chip-count" data-smart-count="small"></span></button>
-          <button data-smart="recent" class="chip" title="Updated in the last 48 hours">Recent <span class="chip-count" data-smart-count="recent"></span></button>
-          <span id="ai-status" class="ai-status off">Rules</span>
-          <select id="sort" class="sort" title="Sort">
+          <button data-smart="all" class="chip active" title="Show all  ⌥0">All <span class="chip-count" data-smart-count="all"></span></button>
+          <button data-smart="ready" class="chip" title="Ready: green, mergeable, no changes requested  ⌥1"><i class="dot ok"></i>Ready <span class="chip-count" data-smart-count="ready"></span></button>
+          <button data-smart="small" class="chip" title="Small: 150 changed lines or fewer  ⌥2">Small <span class="chip-count" data-smart-count="small"></span></button>
+          <button data-smart="recent" class="chip" title="Recent: updated in the last 48 hours  ⌥3">Recent <span class="chip-count" data-smart-count="recent"></span></button>
+          <span id="ai-status" class="ai-status off" title="Smart sort uses built-in rules">Rules</span>
+          <select id="sort" class="sort" title="Sort order  ⇧S">
             <option value="smart">Smart</option>
             <option value="updated">Updated</option>
             <option value="size">Smallest</option>
@@ -67,12 +67,13 @@
               <button id="approve" class="ghost" title="Approve  A">Approve <kbd>A</kbd></button>
               <div class="split-button">
                 <button id="merge" class="primary" title="Merge  ⌘↵">Squash and merge <kbd>⌘</kbd><kbd>↵</kbd></button>
-                <select id="merge-method" title="Merge method">
+                <select id="merge-method" title="Merge method  ⇧M">
                   <option value="squash">Squash</option>
                   <option value="merge">Merge commit</option>
                   <option value="rebase">Rebase</option>
                 </select>
               </div>
+              <button class="ghost" id="open-github" title="Open on GitHub  O"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><kbd>O</kbd></button>
               <button class="icon-button" id="toggle-inspector" title="Toggle details panel  ⌘I">
                 <svg viewBox="0 0 16 16" width="14" height="14"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><line x1="10.5" y1="2.5" x2="10.5" y2="13.5" stroke="currentColor"/></svg>
               </button>

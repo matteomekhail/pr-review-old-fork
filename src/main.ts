@@ -7,6 +7,7 @@ import { CommandPalette } from './palette';
 import { Layout } from './layout';
 import { Lightbox, collectMedia } from './lightbox';
 import { enableWindowDrag } from './window-drag';
+import { enableTooltips } from './tooltip';
 import { isReady, isRecent, isSmall, matchesSmartFilter, sortPulls, type SmartFilter, type SortOrder } from './smart';
 import { assessReadiness, isReadinessAvailable, type ReadinessResult } from './readiness';
 
@@ -268,7 +269,7 @@ function renderList(): void {
   dom.list.innerHTML = pulls
     .map(
       (pull) => `<li data-id="${pull.id}" class="${pull.id === state.selectedId ? 'selected' : ''}${state.checkedIds.has(pull.id) ? ' checked' : ''}${pull.queueEntry != null ? ' queued' : ''}">
-        <span class="check-box" data-check="${pull.id}" role="checkbox" aria-checked="${state.checkedIds.has(pull.id)}"></span>
+        <span class="check-box" data-check="${pull.id}" role="checkbox" aria-checked="${state.checkedIds.has(pull.id)}" title="Select  E / ⇧V"></span>
         ${statusIcon(pull)}
         <span class="id" title="${escapeHtml(pull.repository.nameWithOwner)}">${repoTag(pull, primaryRepo)}#${pull.number}</span>
         <span class="t">${escapeHtml(pull.title)}</span>
@@ -404,7 +405,7 @@ function syncQueueState(pull: PullRequest): void {
 
 function renderDetail(pull: PullRequest): void {
   syncQueueState(pull);
-  dom.crumbs.innerHTML = `<span class="repo" title="${escapeHtml(pull.repository.nameWithOwner)}">${escapeHtml(repoName(pull))}</span><span class="sep">›</span><span class="cur">#${pull.number}</span>`;
+  dom.crumbs.innerHTML = `<span class="repo" title="${escapeHtml(pull.repository.nameWithOwner)}">${escapeHtml(repoName(pull))}</span><span class="sep">›</span><a class="cur pr-link" href="${escapeHtml(pull.url)}" title="Open on GitHub  O">#${pull.number}</a>`;
   renderDetailMeta(pull);
   const description = renderDescription(pull);
   if (reviewMode === 'side') {
@@ -661,13 +662,13 @@ function renderAiStatus(): void {
   if (badge == null) return;
   if (!isAiEnabled) {
     badge.textContent = 'Rules';
-    badge.title = 'Smart sort uses built-in rules. Set OPENROUTER_API_KEY to rank with Jev.';
+    badge.title = 'Built-in rules · set OPENROUTER_API_KEY for Jev';
     badge.className = 'ai-status off';
     return;
   }
   const scored = state.pulls.filter((pull) => aiResults.has(aiKey(pull))).length;
   badge.textContent = aiPending.size > 0 ? `Jev ${scored}/${state.pulls.length}` : 'Jev';
-  badge.title = 'Smart sort ranks by Jev readiness: review evidence, open concerns, change risk and scope, via OpenRouter.';
+  badge.title = 'Smart sort ranks by Jev readiness via OpenRouter';
   badge.className = aiPending.size > 0 ? 'ai-status busy' : 'ai-status on';
 }
 
@@ -999,6 +1000,7 @@ function toggleStyle(): void {
 }
 
 type ReviewMode = 'stacked' | 'side';
+let layoutRef: Layout | null = null;
 let reviewMode: ReviewMode = localStorage.getItem('reviewMode') === 'stacked' ? 'stacked' : 'side';
 
 function applyReviewMode(): void {
@@ -1010,6 +1012,7 @@ function applyReviewMode(): void {
   dom.toggleMode.innerHTML = `${isSide ? 'Stacked' : 'Side by side'} <kbd>V</kbd>`;
   const pull = selectedPull();
   if (pull != null) renderDetail(pull);
+  layoutRef?.refit();
 }
 
 function toggleReviewMode(): void {
@@ -1019,6 +1022,7 @@ function toggleReviewMode(): void {
 }
 
 const layout = new Layout(element('app'), () => syncPaneButtons());
+layoutRef = layout;
 const lightbox = new Lightbox((url) => void openInBrowser(url).catch((error: unknown) => toast(errorMessage(error), true)));
 
 function descriptionRoot(): HTMLElement | null {
@@ -1053,6 +1057,15 @@ function cycleMergeMethod(): void {
   localStorage.setItem('mergeMethod', next);
   syncMergeLabel();
   toast(`Merge method: ${MERGE_LABELS[next]}`);
+}
+
+function openSelectedOnGitHub(): void {
+  const pull = selectedPull();
+  if (pull == null) return;
+  void openInBrowser(pull.url).then(
+    () => toast(`Opened #${pull.number} on GitHub`),
+    (error: unknown) => toast(errorMessage(error), true),
+  );
 }
 
 function copyText(text: string, label: string): void {
@@ -1158,7 +1171,7 @@ const COMMANDS: Command[] = [
 
   ...VIM_COMMANDS,
   ...DIFF_SCROLL_COMMANDS,
-  { id: 'toggle-file', section: 'Diff', title: 'Collapse / expand file', aliases: 'fold unfold hide', keys: ['x', 'o'], run: toggleCurrentFile, isEnabled: hasFiles },
+  { id: 'toggle-file', section: 'Diff', title: 'Collapse / expand file', aliases: 'fold unfold hide', keys: ['x'], run: toggleCurrentFile, isEnabled: hasFiles },
   { id: 'toggle-files', section: 'Diff', title: 'Collapse / expand file list', aliases: 'files tree sidebar hide', keys: ['⇧f'], run: toggleFilesSection },
   { id: 'toggle-all', section: 'Diff', title: 'Collapse / expand all files', aliases: 'fold unfold hide', keys: ['⇧c'], run: toggleAllFiles, isEnabled: hasFiles },
   { id: 'diff-style', section: 'Diff', title: 'Toggle split / unified diff', aliases: 'side by side inline view', keys: ['s', '⌘⌥s'], run: toggleStyle },
@@ -1166,7 +1179,7 @@ const COMMANDS: Command[] = [
   { id: 'approve', section: 'Pull request', title: 'Approve', aliases: 'lgtm review accept', keys: ['a'], run: () => void approveSelected(), isEnabled: hasPull },
   { id: 'merge', section: 'Pull request', title: 'Merge…', aliases: 'squash ship land', keys: ['⌘↵', 'm'], run: () => void mergeSelected(), isEnabled: hasPull },
   { id: 'merge-method', section: 'Pull request', title: 'Cycle merge method', keys: ['⇧m'], run: cycleMergeMethod },
-  { id: 'open', section: 'Pull request', title: 'Open on GitHub', keys: ['⌘⇧o', 'g o'], run: () => { const pull = selectedPull(); if (pull != null) void openInBrowser(pull.url); }, isEnabled: hasPull },
+  { id: 'open', section: 'Pull request', title: 'Open on GitHub', aliases: 'browser link url web', keys: ['o', '⌘o', 'g o'], run: openSelectedOnGitHub, isEnabled: hasPull },
   { id: 'copy-url', section: 'Pull request', title: 'Copy link', keys: ['⌘⇧c', 'y'], run: () => { const pull = selectedPull(); if (pull != null) copyText(pull.url, 'link'); }, isEnabled: hasPull },
   { id: 'copy-branch', section: 'Pull request', title: 'Copy branch name', keys: ['⌘⇧.', 'b'], run: () => { const pull = selectedPull(); if (pull != null) copyText(pull.headRefName, 'branch'); }, isEnabled: hasPull },
 ];
@@ -1259,11 +1272,18 @@ element('toggle-sidebar').addEventListener('click', () => layout.toggle('sidebar
 element('toggle-inspector').addEventListener('click', () => layout.toggle('inspector'));
 element('open-palette').addEventListener('click', () => palette.open());
 element('open-help').addEventListener('click', openHelp);
+element('open-github').addEventListener('click', openSelectedOnGitHub);
+dom.crumbs.addEventListener('click', (event) => {
+  if (!(event.target as HTMLElement).closest('.pr-link')) return;
+  event.preventDefault();
+  openSelectedOnGitHub();
+});
 dom.toggleMode.addEventListener('click', toggleReviewMode);
 applyReviewMode();
 enableWindowDrag();
 applyTheme();
 applyFilesCollapsed();
+enableTooltips();
 systemDark.addEventListener('change', () => theme === 'system' && applyTheme());
 document.querySelector('.file-tree .section-title')?.addEventListener('click', toggleFilesSection);
 dom.filterBar.addEventListener('click', (event) => {
