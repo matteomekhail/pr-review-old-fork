@@ -24,6 +24,7 @@ export interface PullRequest {
   author: { login: string; avatarUrl: string } | null;
   repository: { nameWithOwner: string };
   checkState: CheckState | null;
+  queueEntry: { position: number; state: string } | null;
 }
 
 export interface MergeState {
@@ -32,7 +33,8 @@ export interface MergeState {
   mergeStateStatus: string;
 }
 
-interface RawPullRequest extends Omit<PullRequest, 'checkState' | 'mergeable' | 'mergeStateStatus'> {
+interface RawPullRequest extends Omit<PullRequest, 'checkState' | 'mergeable' | 'mergeStateStatus' | 'queueEntry'> {
+  mergeQueueEntry: { position: number; state: string } | null;
   commits: { nodes: { commit: { statusCheckRollup: { state: CheckState } | null } }[] };
 }
 
@@ -45,8 +47,8 @@ function isPullRequest(node: RawPullRequest | Record<string, never>): node is Ra
   return typeof node.number === 'number';
 }
 
-function toPullRequest({ commits, ...pull }: RawPullRequest): PullRequest {
-  return { ...pull, mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN', checkState: commits.nodes[0]?.commit.statusCheckRollup?.state ?? null };
+function toPullRequest({ commits, mergeQueueEntry, ...pull }: RawPullRequest): PullRequest {
+  return { ...pull, queueEntry: mergeQueueEntry ?? null, mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN', checkState: commits.nodes[0]?.commit.statusCheckRollup?.state ?? null };
 }
 
 const MERGE_STATE_BATCH = 20;

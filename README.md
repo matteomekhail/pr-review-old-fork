@@ -11,6 +11,8 @@ A fast, keyboard-first macOS app for reviewing and merging GitHub pull requests.
 - **Jev readiness (optional):** with `OPENROUTER_API_KEY` set, each PR is scored by [Jev](https://openrouter.ai) on review evidence, open concerns, change risk and scope, taken from its description, reviews and comments. Without a key, it falls back to the built-in rules.
 - **Diffs:** [`@pierre/diffs`](https://www.npmjs.com/package/@pierre/diffs), virtualized and syntax-highlighted in web workers. Collapsible files and sticky headers.
 - **Layouts:** stacked (description above diff) or side by side (`V`: description left, diff right). Panes resize and hide.
+- **Merge queue:** PRs already in a queue show a yellow marker with their position, and queued merges skip the confirmation.
+- **Themes:** light, dark, or follow the system.
 - **Bulk actions:** select with `E` / `⇧J` / `⇧R`, then approve or merge in sequence with per-PR error reporting.
 - **Keyboard:** Linear-style single keys, VS Code chords, vim motions, and a `/` command menu. `?` lists every shortcut.
 
@@ -61,11 +63,11 @@ Vim motions work the same in every pane; the modifier picks the pane.
 | Area | Keys |
 | --- | --- |
 | Queue | `J`/`K` next/prev · `gg`/`G` first/last · `Space`/`⇧Space` page the middle pane |
-| Files | `N`/`P` or `]c`/`[c` next/prev file · `X` collapse · `⇧C` collapse all · `S` split/unified |
+| Files | `N`/`P` or `]c`/`[c` next/prev file · `X` collapse · `⇧C` collapse all · `⇧F` hide file list · `S` split/unified |
 | Filters | `⌥1` Ready · `⌥2` Small · `⌥3` Recent · `⌥0` All · `⇧S` sort |
-| Select | `E` toggle · `⇧J`/`⇧K` extend · `⇧R` all ready · `⌘A` all · `Esc` clear |
+| Select | `⇧V` visual mode (then `J`/`K`) · `E` toggle · `⇧J`/`⇧K` extend · `⇧R` all ready · `⌘A` all · `Esc` clear |
 | Act | `A` approve · `⌘↵` merge · `⇧A` bulk approve · `⌘⇧↵` bulk merge |
-| Layout | `V` side by side · `⌘\` sidebar · `⌘⇧\` list · `⌘I` details · `⌘.` focus |
+| Layout | `⌘⇧L` theme (system/dark/light) · `V` side by side · `⌘\` sidebar · `⌘⇧\` list · `⌘I` details · `⌘.` focus |
 | Lightbox | `I` open first media · `H`/`L` or `J`/`K` or `←`/`→` cycle · `gg`/`G` first/last · `⌃D`/`⌃U` skip half · `Z` zoom · `O` open · `Q`/`Esc` close |
 | General | `/` commands · `?` shortcuts · `F` filter · `R` refresh |
 

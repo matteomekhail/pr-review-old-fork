@@ -22,10 +22,10 @@ const LARGE_FILE_LINES = 1500;
 const GENERATED_FILE = /(^|\/)(bun\.lock|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock)$|\.snap$|\.min\.(js|css)$/;
 
 const HEADER_CSS = `
-:host { border: 1px solid #23252a; border-radius: 8px; }
+:host { border: 1px solid var(--diffs-card-border, #23252a); border-radius: 8px; }
 [data-diffs-header], [data-separator], [data-column-number] { -webkit-user-select: none; user-select: none; }
 [data-diffs-header=default] { border-radius: 8px 8px 0 0; cursor: pointer; user-select: none; padding-inline: 12px; }
-[data-diffs-header=default]:hover { background: color-mix(in srgb, var(--diffs-bg) 88%, white); }
+[data-diffs-header=default]:hover { background: color-mix(in srgb, var(--diffs-bg) 92%, var(--diffs-mixer)); }
 `;
 
 const FLUSH_CSS = `
@@ -69,6 +69,7 @@ export class DiffView {
   private readonly callbacks: DiffViewCallbacks;
   private header: HTMLElement | undefined;
   private isFlush = false;
+  private themeType: 'dark' | 'light' = 'dark';
   private diffStyle: DiffStyle;
   private collapsed = new Set<string>();
   private ids: string[] = [];
@@ -100,6 +101,12 @@ export class DiffView {
 
   collapsedCount(): number {
     return this.collapsed.size;
+  }
+
+  setThemeType(themeType: 'dark' | 'light'): void {
+    if (this.themeType === themeType) return;
+    this.themeType = themeType;
+    this.view.setOptions(this.options());
   }
 
   setFlush(isFlush: boolean): void {
@@ -153,7 +160,7 @@ export class DiffView {
     const header = this.header;
     return {
       theme: { dark: 'pierre-dark', light: 'pierre-light' },
-      themeType: 'dark',
+      themeType: this.themeType,
       diffStyle: this.diffStyle,
       diffIndicators: 'bars',
       lineDiffType: 'word-alt',

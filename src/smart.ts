@@ -34,6 +34,7 @@ export function isMergeable(pull: PullRequest): boolean {
 }
 
 export function isReady(pull: PullRequest): boolean {
+  if (pull.queueEntry != null) return false;
   return isGreen(pull) && isMergeable(pull) && pull.reviewDecision !== 'CHANGES_REQUESTED';
 }
 

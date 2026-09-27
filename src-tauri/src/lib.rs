@@ -8,6 +8,7 @@ const QUEUE_FIELDS: &str = r#"
   id number title url isDraft
   createdAt updatedAt additions deletions changedFiles
   headRefName baseRefName reviewDecision
+  mergeQueueEntry { position state }
   author { login avatarUrl }
   repository { nameWithOwner }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }

@@ -101,11 +101,23 @@ function syncMergeLabel(): void {
   dom.mergeMethod.hidden = isSelectedQueued;
 }
 
+type ToastTone = 'info' | 'success' | 'error';
+
+const TOAST_ICONS: Record<ToastTone, string> = {
+  info: '<svg viewBox="0 0 20 20" width="18" height="18"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 9v5M10 6.2v.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  success: '<svg viewBox="0 0 20 20" width="18" height="18"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6.2 10.3l2.5 2.5 5.1-5.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  error: '<svg viewBox="0 0 20 20" width="18" height="18"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 5.8v5.4M10 14.1v.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+};
+const SUCCESS_PATTERN = /^(approved|merged|queued|copied|added|#\d+ (queued|added))/i;
+
 function toast(message: string, isError = false): void {
-  dom.toast.textContent = message;
-  dom.toast.className = isError ? 'show error' : 'show';
+  const tone: ToastTone = isError ? 'error' : SUCCESS_PATTERN.test(message) ? 'success' : 'info';
+  dom.toast.innerHTML = `<span class="toast-icon">${TOAST_ICONS[tone]}</span><span class="toast-text"></span>`;
+  const text = dom.toast.querySelector('.toast-text');
+  if (text != null) text.textContent = message;
+  dom.toast.className = `show ${tone}`;
   window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (dom.toast.className = ''), isError ? 6000 : 2200);
+  toastTimer = window.setTimeout(() => (dom.toast.className = tone), isError ? 9000 : 4500);
 }
 
 function errorMessage(error: unknown): string {
@@ -182,7 +194,15 @@ function selectedPull(): PullRequest | undefined {
   return state.pulls.find((pull) => pull.id === state.selectedId);
 }
 
+function queueLabel(pull: PullRequest): string {
+  const entry = pull.queueEntry;
+  if (entry == null) return '';
+  const phase = entry.state === 'AWAITING_CHECKS' ? 'running checks' : entry.state === 'MERGEABLE' ? 'merging' : entry.state === 'UNMERGEABLE' ? 'failed' : entry.state.toLowerCase().replace(/_/g, ' ');
+  return `In merge queue · #${entry.position + 1} · ${phase}`;
+}
+
 function statusIcon(pull: PullRequest): string {
+  if (pull.queueEntry != null) return `<span class="status queued" title="${escapeHtml(queueLabel(pull))}"></span>`;
   if (pull.isDraft) return '<span class="status draft" title="Draft"></span>';
   if (pull.mergeable === 'CONFLICTING') return '<span class="status conflict" title="Conflicts"></span>';
   if (pull.reviewDecision === 'APPROVED') return '<span class="status approved" title="Approved"></span>';
@@ -247,12 +267,12 @@ function renderList(): void {
   const primaryRepo = mostCommonRepo();
   dom.list.innerHTML = pulls
     .map(
-      (pull) => `<li data-id="${pull.id}" class="${pull.id === state.selectedId ? 'selected' : ''}${state.checkedIds.has(pull.id) ? ' checked' : ''}">
+      (pull) => `<li data-id="${pull.id}" class="${pull.id === state.selectedId ? 'selected' : ''}${state.checkedIds.has(pull.id) ? ' checked' : ''}${pull.queueEntry != null ? ' queued' : ''}">
         <span class="check-box" data-check="${pull.id}" role="checkbox" aria-checked="${state.checkedIds.has(pull.id)}"></span>
         ${statusIcon(pull)}
         <span class="id" title="${escapeHtml(pull.repository.nameWithOwner)}">${repoTag(pull, primaryRepo)}#${pull.number}</span>
         <span class="t">${escapeHtml(pull.title)}</span>
-        <span class="right">${readinessDot(pull)}${checksIcon(pull)}<span class="delta"><i class="add">+${pull.additions}</i> <i class="del">−${pull.deletions}</i></span><span class="age">${relativeTime(pull.updatedAt)}</span>${avatar(pull)}</span>
+        <span class="right">${pull.queueEntry != null ? `<span class="queue-pill" title="${escapeHtml(queueLabel(pull))}">Queued</span>` : ''}${readinessDot(pull)}${checksIcon(pull)}<span class="delta"><i class="add">+${pull.additions}</i> <i class="del">−${pull.deletions}</i></span><span class="age">${relativeTime(pull.updatedAt)}</span>${avatar(pull)}</span>
       </li>`,
     )
     .join('');
@@ -266,6 +286,7 @@ function renderList(): void {
 }
 
 function mergeState(pull: PullRequest): { label: string; tone: string } {
+  if (pull.queueEntry != null) return { label: pull.queueEntry.state === 'UNMERGEABLE' ? 'Queue failed' : `In merge queue #${pull.queueEntry.position + 1}`, tone: pull.queueEntry.state === 'UNMERGEABLE' ? 'bad' : 'wait' };
   if (pull.isDraft) return { label: 'Draft', tone: 'muted' };
   if (pull.mergeable === 'CONFLICTING') return { label: 'Conflicts', tone: 'bad' };
   switch (pull.mergeStateStatus) {
@@ -367,7 +388,8 @@ function renderDetailMeta(pull: PullRequest): void {
     chip(`<i class="add">+${pull.additions}</i><i class="del">−${pull.deletions}</i>`, `${pull.changedFiles} files changed`, 'plain delta'),
     chip(relativeTime(pull.updatedAt), `Updated ${relativeTime(pull.updatedAt)} ago`, 'plain muted-chip'),
   ].join('');
-  dom.merge.disabled = pull.isDraft || pull.mergeable === 'CONFLICTING';
+  dom.merge.disabled = pull.isDraft || pull.mergeable === 'CONFLICTING' || pull.queueEntry != null;
+  if (pull.queueEntry != null) dom.merge.innerHTML = `In queue #${pull.queueEntry.position + 1}`;
 }
 
 function syncQueueState(pull: PullRequest): void {
@@ -411,6 +433,20 @@ function fileLabel(file: ParsedFile): string {
   const slash = file.diff.name.lastIndexOf('/');
   const directory = slash >= 0 ? file.diff.name.slice(0, slash + 1) : '';
   return `<span class="base">${escapeHtml(file.diff.name.slice(slash + 1))}</span><span class="dir">${escapeHtml(directory)}</span>`;
+}
+
+let isFilesCollapsed = localStorage.getItem('filesCollapsed') === '1';
+
+function applyFilesCollapsed(): void {
+  document.querySelector('.file-tree')?.classList.toggle('collapsed', isFilesCollapsed);
+  const title = document.querySelector('.file-tree .section-title');
+  title?.setAttribute('aria-expanded', String(!isFilesCollapsed));
+}
+
+function toggleFilesSection(): void {
+  isFilesCollapsed = !isFilesCollapsed;
+  localStorage.setItem('filesCollapsed', isFilesCollapsed ? '1' : '0');
+  applyFilesCollapsed();
 }
 
 function renderFiles(files: ParsedFile[]): void {
@@ -495,6 +531,10 @@ function movePull(delta: number): void {
   const index = pulls.findIndex((pull) => pull.id === state.selectedId);
   const next = pulls[Math.min(pulls.length - 1, Math.max(0, index + delta))];
   if (next != null && next.id !== state.selectedId) void select(next);
+  if (next != null && visualAnchorId != null) {
+    state.selectedId = next.id;
+    syncVisualRange();
+  }
 }
 
 const LIST_PAGE_ROWS = 10;
@@ -783,6 +823,34 @@ function toggleCheckedCurrent(isRange: boolean): void {
   if (state.selectedId != null) toggleChecked(state.selectedId, isRange);
 }
 
+let visualAnchorId: string | null = null;
+
+function toggleVisualMode(): void {
+  if (visualAnchorId != null) {
+    visualAnchorId = null;
+    dom.list.classList.remove('visual');
+    toast(`${state.checkedIds.size} selected`);
+    return;
+  }
+  if (state.selectedId == null) return;
+  visualAnchorId = state.selectedId;
+  dom.list.classList.add('visual');
+  setChecked([state.selectedId], true);
+  toast('Visual mode: J/K to extend, ⌘⇧↵ merge, ⇧A approve, Esc to exit');
+}
+
+function syncVisualRange(): void {
+  if (visualAnchorId == null || state.selectedId == null) return;
+  const pulls = visiblePulls();
+  const anchor = pulls.findIndex((pull) => pull.id === visualAnchorId);
+  const cursor = pulls.findIndex((pull) => pull.id === state.selectedId);
+  if (anchor < 0 || cursor < 0) return;
+  const [start, end] = anchor < cursor ? [anchor, cursor] : [cursor, anchor];
+  const range = new Set(pulls.slice(start, end + 1).map((pull) => pull.id));
+  setChecked([...state.checkedIds].filter((id) => !range.has(id)), false);
+  setChecked(range, true);
+}
+
 function extendSelection(delta: number): void {
   if (state.selectedId == null) return;
   if (!state.checkedIds.has(state.selectedId)) setChecked([state.selectedId], true);
@@ -802,6 +870,8 @@ function selectReady(): void {
 
 function clearChecked(): void {
   checkAnchorId = null;
+  visualAnchorId = null;
+  dom.list.classList.remove('visual');
   setChecked([...state.checkedIds], false);
 }
 
@@ -992,6 +1062,28 @@ function copyText(text: string, label: string): void {
   );
 }
 
+type Theme = 'dark' | 'light' | 'system';
+let theme: Theme = (localStorage.getItem('theme') as Theme | null) ?? 'system';
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+
+function resolvedTheme(): 'dark' | 'light' {
+  return theme === 'system' ? (systemDark.matches ? 'dark' : 'light') : theme;
+}
+
+function applyTheme(): void {
+  const resolved = resolvedTheme();
+  document.documentElement.dataset.theme = resolved;
+  diffView.setThemeType(resolved);
+}
+
+function cycleTheme(): void {
+  const order: Theme[] = ['system', 'dark', 'light'];
+  theme = order[(order.indexOf(theme) + 1) % order.length] ?? 'system';
+  localStorage.setItem('theme', theme);
+  applyTheme();
+  toast(`Theme: ${theme === 'system' ? `system (${resolvedTheme()})` : theme}`);
+}
+
 function syncPaneButtons(): void {
   document.getElementById('toggle-sidebar')?.classList.toggle('on', !layout.isHidden('sidebar'));
   document.getElementById('toggle-inspector')?.classList.toggle('on', !layout.isHidden('inspector'));
@@ -1031,6 +1123,7 @@ const COMMANDS: Command[] = [
   { id: 'smart-recent', section: 'Filter', title: 'Show recently updated', aliases: 'new fresh', keys: ['⌥3'], run: () => setSmartFilter('recent') },
   { id: 'sort', section: 'Filter', title: 'Cycle sort (smart / updated / smallest)', aliases: 'order', keys: ['⇧s'], run: cycleSortOrder },
 
+  { id: 'visual', section: 'Select', title: 'Visual select mode (vim V)', aliases: 'multi range bulk vim', keys: ['⇧v'], run: toggleVisualMode, isEnabled: hasPull },
   { id: 'check', section: 'Select', title: 'Select / deselect pull request', aliases: 'check bulk multi', keys: ['e'], run: () => toggleCheckedCurrent(false), isEnabled: hasPull },
   { id: 'check-down', section: 'Select', title: 'Extend selection down', keys: ['⇧j', '⇧↓'], run: () => extendSelection(1), isEnabled: hasPull },
   { id: 'check-up', section: 'Select', title: 'Extend selection up', keys: ['⇧k', '⇧↑'], run: () => extendSelection(-1), isEnabled: hasPull },
@@ -1049,6 +1142,7 @@ const COMMANDS: Command[] = [
   { id: 'toggle-list', section: 'Layout', title: 'Toggle pull request list', aliases: 'hide show pane queue inbox', keys: ['⌘⇧b', '⌘⇧\\'], run: () => layout.toggle('list') },
   { id: 'toggle-inspector', section: 'Layout', title: 'Toggle details panel', aliases: 'inspector hide show pane properties files', keys: ['⌘i'], run: () => layout.toggle('inspector') },
   { id: 'focus-mode', section: 'Layout', title: 'Focus mode (hide all panels)', aliases: 'zen fullscreen hide panes', keys: ['⌘.', 'z'], run: () => layout.toggleFocus() },
+  { id: 'theme', section: 'Layout', title: 'Cycle theme (system / dark / light)', aliases: 'light dark mode appearance color', keys: ['⌘⇧l'], run: cycleTheme },
   { id: 'reset-layout', section: 'Layout', title: 'Reset layout', aliases: 'panes widths default', keys: ['⌘⇧0'], run: () => layout.reset() },
 
   { id: 'next-pr', section: 'Navigate', title: 'Next pull request', keys: ['j', '↓'], run: () => movePull(1) },
@@ -1065,6 +1159,7 @@ const COMMANDS: Command[] = [
   ...VIM_COMMANDS,
   ...DIFF_SCROLL_COMMANDS,
   { id: 'toggle-file', section: 'Diff', title: 'Collapse / expand file', aliases: 'fold unfold hide', keys: ['x', 'o'], run: toggleCurrentFile, isEnabled: hasFiles },
+  { id: 'toggle-files', section: 'Diff', title: 'Collapse / expand file list', aliases: 'files tree sidebar hide', keys: ['⇧f'], run: toggleFilesSection },
   { id: 'toggle-all', section: 'Diff', title: 'Collapse / expand all files', aliases: 'fold unfold hide', keys: ['⇧c'], run: toggleAllFiles, isEnabled: hasFiles },
   { id: 'diff-style', section: 'Diff', title: 'Toggle split / unified diff', aliases: 'side by side inline view', keys: ['s', '⌘⌥s'], run: toggleStyle },
 
@@ -1167,6 +1262,10 @@ element('open-help').addEventListener('click', openHelp);
 dom.toggleMode.addEventListener('click', toggleReviewMode);
 applyReviewMode();
 enableWindowDrag();
+applyTheme();
+applyFilesCollapsed();
+systemDark.addEventListener('change', () => theme === 'system' && applyTheme());
+document.querySelector('.file-tree .section-title')?.addEventListener('click', toggleFilesSection);
 dom.filterBar.addEventListener('click', (event) => {
   const chip = (event.target as HTMLElement).closest<HTMLElement>('[data-smart]');
   if (chip != null) setSmartFilter(chip.dataset.smart as SmartFilter);
