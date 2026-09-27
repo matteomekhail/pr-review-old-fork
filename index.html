@@ -25,7 +25,11 @@
 
       <section id="list-pane">
         <header class="pane-head drag-region" data-tauri-drag-region>
-          <h2 id="view-title" data-tauri-drag-region>Created by me</h2>
+          <div class="head-title" data-tauri-drag-region>
+            <h2 id="view-title" data-tauri-drag-region>Created by me</h2>
+            <button id="refresh-button" class="icon-button refresh-button" title="Refresh  ⌘R"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M13.5 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <span id="refresh-status" class="refresh-status"></span>
+          </div>
           <div class="search"><span>⌕</span><input id="filter" title="Filter pull requests  F" placeholder="Filter" spellcheck="false" autocomplete="off" /><kbd>F</kbd></div>
         </header>
         <div class="filter-bar" id="filter-bar">

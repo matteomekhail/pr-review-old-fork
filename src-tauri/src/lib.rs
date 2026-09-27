@@ -310,19 +310,18 @@ fn http_client() -> &'static reqwest::Client {
 
 #[tauri::command]
 async fn open_in_browser(url: String) -> Result<(), String> {
-    let is_github = url.starts_with("https://github.com/");
-    let is_github_media = ["https://camo.githubusercontent.com/", "https://private-user-images.githubusercontent.com/", "https://user-images.githubusercontent.com/", "https://raw.githubusercontent.com/", "https://objects.githubusercontent.com/"]
-        .iter()
-        .any(|prefix| url.starts_with(prefix));
-    if !(is_github || is_github_media) || url.chars().any(|character| character.is_whitespace() || character.is_control()) {
-        return Err("refusing to open non-GitHub URL".to_string());
+    let is_safe = url.starts_with("https://")
+        && url.len() <= 4_096
+        && !url.chars().any(|character| character.is_whitespace() || character.is_control());
+    if !is_safe {
+        return Err("only https links can be opened".to_string());
     }
-    let chrome = Command::new("/usr/bin/open").args(["-b", "com.google.Chrome", &url]).status().await;
+    let chrome = Command::new("/usr/bin/open").args(["-b", "com.google.Chrome", "--", &url]).status().await;
     if matches!(chrome, Ok(status) if status.success()) {
         return Ok(());
     }
-    Command::new("/usr/bin/open").arg(&url).status().await.map_err(|error| error.to_string())?;
-    Ok(())
+    let fallback = Command::new("/usr/bin/open").args(["--", &url]).status().await.map_err(|error| error.to_string())?;
+    if fallback.success() { Ok(()) } else { Err(format!("could not open {url}")) }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

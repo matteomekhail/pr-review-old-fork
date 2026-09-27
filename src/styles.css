@@ -448,3 +448,11 @@ img { -webkit-user-drag: none; }
 #toggle-grouping { flex: none; order: -1; }
 .filter-bar .ai-status { margin-left: 0; }
 .filter-bar .sort { margin-left: auto; }
+
+.head-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.refresh-button { width: 24px; height: 24px; color: var(--text-4); }
+.refresh-button:hover { color: var(--text-2); }
+.refresh-button.spinning { color: var(--accent); }
+.refresh-button.spinning svg { animation: spin .8s linear infinite; }
+.refresh-status { color: var(--text-4); font-size: 11.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#list-pane.narrow .refresh-status { display: none; }

@@ -10,6 +10,7 @@ import { enableWindowDrag } from './window-drag';
 import { enableTooltips } from './tooltip';
 import { groupPulls, type PullGroup } from './grouping';
 import { imageUrlsInHtml, preloadImages } from './image-cache';
+import { routeLinksToBrowser } from './external-links';
 import { isReady, isRecent, isSmall, matchesSmartFilter, sortPulls, type SmartFilter, type SortOrder } from './smart';
 import { assessReadiness, isReadinessAvailable, type ReadinessResult } from './readiness';
 
@@ -302,7 +303,7 @@ function loadCachedGroups(pulls: readonly PullRequest[]): void {
   }
 }
 
-async function ensureGroups(): Promise<void> {
+async function ensureGroups(isUserInitiated = false): Promise<void> {
   const signature = pullsSignature(state.pulls);
   if (!isGrouped || !isAiEnabled || isGrouping || signature === groupsSignature || state.pulls.length < 2) return;
   loadCachedGroups(state.pulls);
@@ -313,9 +314,10 @@ async function ensureGroups(): Promise<void> {
     groups = await groupPulls(state.pulls);
     groupsSignature = signature;
     localStorage.setItem(GROUPS_CACHE_KEY, JSON.stringify({ signature, groups }));
-    toast(`Grouped into ${groups.length} efforts`);
+    if (isUserInitiated) toast(`Grouped related work into ${groups.length} group${groups.length === 1 ? '' : 's'}`);
   } catch (error) {
-    toast(`Grouping failed: ${errorMessage(error)}`, true);
+    if (isUserInitiated) toast(`Grouping failed: ${errorMessage(error)}`, true);
+    else console.warn('background regroup failed', errorMessage(error));
   } finally {
     isGrouping = false;
     renderList();
@@ -330,7 +332,8 @@ function toggleGrouping(): void {
   isGrouped = !isGrouped;
   localStorage.setItem('grouped', isGrouped ? '1' : '0');
   renderList();
-  void ensureGroups();
+  if (!isGrouped) toast('Grouping off');
+  void ensureGroups(true);
 }
 
 function averageReadiness(pulls: PullRequest[]): number {
@@ -843,6 +846,54 @@ const inFlight = new Map<QueueKind, Promise<void>>();
 const lastFetchedAt = new Map<QueueKind, number>();
 const MIN_REFRESH_GAP_MS = 20_000;
 
+let refreshTicker: number | undefined;
+
+function renderRefreshStatus(): void {
+  const status = document.getElementById('refresh-status');
+  const button = document.getElementById('refresh-button');
+  const isLoading = inFlight.has(state.kind);
+  button?.classList.toggle('spinning', isLoading);
+  if (status == null) return;
+  if (isLoading) {
+    status.textContent = 'Refreshing…';
+    return;
+  }
+  const at = lastFetchedAt.get(state.kind);
+  if (at == null) {
+    status.textContent = '';
+    return;
+  }
+  const seconds = Math.round((Date.now() - at) / 1000);
+  status.textContent = seconds < 10 ? 'Just now' : seconds < 60 ? `${seconds}s ago` : `${Math.round(seconds / 60)}m ago`;
+  status.title = `Last refreshed ${new Date(at).toLocaleTimeString()}`;
+}
+
+function summarizeChange(before: PullRequest[], after: PullRequest[]): string {
+  const beforeIds = new Set(before.map((pull) => pull.id));
+  const afterIds = new Set(after.map((pull) => pull.id));
+  const added = after.filter((pull) => !beforeIds.has(pull.id)).length;
+  const removed = before.filter((pull) => !afterIds.has(pull.id)).length;
+  const beforeById = new Map(before.map((pull) => [pull.id, pull]));
+  const updated = after.filter((pull) => {
+    const previous = beforeById.get(pull.id);
+    return previous != null && previous.updatedAt !== pull.updatedAt;
+  }).length;
+  const parts = [added > 0 ? `${added} new` : '', removed > 0 ? `${removed} closed or merged` : '', updated > 0 ? `${updated} updated` : ''].filter((part) => part !== '');
+  return parts.length === 0 ? `Up to date · ${after.length} PRs` : `Refreshed · ${parts.join(' · ')}`;
+}
+
+function manualRefresh(): void {
+  const before = queueCache.get(state.kind) ?? [];
+  const kind = state.kind;
+  const started = Date.now();
+  const pending = refresh(kind, true);
+  renderRefreshStatus();
+  void pending.then(() => {
+    if (kind !== state.kind || !lastFetchedAt.has(kind) || (lastFetchedAt.get(kind) ?? 0) < started) return;
+    toast(summarizeChange(before, queueCache.get(kind) ?? []));
+  });
+}
+
 function refresh(kind: QueueKind, isForced = false): Promise<void> {
   const running = inFlight.get(kind);
   if (running != null) return running;
@@ -856,15 +907,19 @@ function refresh(kind: QueueKind, isForced = false): Promise<void> {
       if (kind === state.kind) applyQueue(merged);
       if (kind === state.kind) void scoreWithJev(merged);
       if (kind === state.kind) void ensureGroups();
-      return loadMergeStates(kind, merged);
+        return loadMergeStates(kind, merged);
     })
     .catch((error: unknown) => {
       if (kind !== state.kind) return;
       toast(`GitHub: ${errorMessage(error).split('\n')[0]}`, true);
       if (state.pulls.length === 0) dom.empty.textContent = `Could not load: ${errorMessage(error)}`;
     })
-    .finally(() => inFlight.delete(kind));
+    .finally(() => {
+      inFlight.delete(kind);
+      renderRefreshStatus();
+    });
   inFlight.set(kind, pending);
+  renderRefreshStatus();
   return pending;
 }
 
@@ -892,6 +947,7 @@ function switchKind(kind: QueueKind): void {
   const first = visiblePulls()[0];
   if (first != null) void select(first);
   void scoreWithJev(state.pulls);
+  renderRefreshStatus();
   groupsSignature = '';
   void ensureGroups();
   void refresh(kind);
@@ -1294,14 +1350,14 @@ const COMMANDS: Command[] = [
   { id: 'palette', section: 'General', title: 'Open command menu', keys: ['/', '⌘⇧p'], run: () => palette.open() },
   { id: 'help', section: 'General', title: 'Keyboard shortcuts', keys: ['?', '⌘/'], run: openHelp },
   { id: 'filter', section: 'General', title: 'Filter pull requests', keys: ['f', '⌘f'], run: () => dom.filter.focus() },
-  { id: 'refresh', section: 'General', title: 'Refresh', keys: ['r', '⌘r'], run: () => void refresh(state.kind, true) },
+  { id: 'refresh', section: 'General', title: 'Refresh', keys: ['r', '⌘r'], run: manualRefresh },
 
   { id: 'smart-all', section: 'Filter', title: 'Show all', aliases: 'clear filter', keys: ['⌥0'], run: () => setSmartFilter('all') },
   { id: 'smart-ready', section: 'Filter', title: 'Show ready to merge', aliases: 'green approved mergeable', keys: ['⌥1'], run: () => setSmartFilter('ready') },
   { id: 'smart-small', section: 'Filter', title: 'Show small diffs', aliases: 'tiny quick', keys: ['⌥2'], run: () => setSmartFilter('small') },
   { id: 'smart-recent', section: 'Filter', title: 'Show recently updated', aliases: 'new fresh', keys: ['⌥3'], run: () => setSmartFilter('recent') },
   { id: 'group', section: 'Filter', title: 'Group related work (Jev)', aliases: 'cluster effort category batch smart group', keys: ['t'], run: toggleGrouping },
-  { id: 'regroup', section: 'Filter', title: 'Regroup with Jev', aliases: 'refresh groups cluster', keys: [], run: () => { groupsSignature = ''; localStorage.removeItem(GROUPS_CACHE_KEY); void ensureGroups(); } },
+  { id: 'regroup', section: 'Filter', title: 'Regroup with Jev', aliases: 'refresh groups cluster', keys: [], run: () => { groupsSignature = ''; localStorage.removeItem(GROUPS_CACHE_KEY); void ensureGroups(true); } },
   { id: 'sort', section: 'Filter', title: 'Cycle sort (smart / updated / smallest)', aliases: 'order', keys: ['⇧s'], run: cycleSortOrder },
 
   { id: 'visual', section: 'Select', title: 'Visual select mode (vim V)', aliases: 'multi range bulk vim', keys: ['⇧v'], run: toggleVisualMode, isEnabled: hasPull },
@@ -1438,10 +1494,6 @@ document.getElementById('pr-body-split')?.addEventListener('click', (event) => {
     event.preventDefault();
     return;
   }
-  const link = target.closest?.('.description a');
-  if (!(link instanceof HTMLAnchorElement)) return;
-  event.preventDefault();
-  if (link.href.startsWith('https://github.com/')) void openInBrowser(link.href);
 });
 
 document.querySelectorAll<HTMLButtonElement>('.views button').forEach((button) =>
@@ -1457,6 +1509,9 @@ element('toggle-inspector').addEventListener('click', () => layout.toggle('inspe
 element('open-palette').addEventListener('click', () => palette.open());
 element('open-help').addEventListener('click', openHelp);
 element('open-github').addEventListener('click', openSelectedOnGitHub);
+element('refresh-button').addEventListener('click', manualRefresh);
+refreshTicker = window.setInterval(renderRefreshStatus, 5_000);
+void refreshTicker;
 dom.crumbs.addEventListener('click', (event) => {
   if (!(event.target as HTMLElement).closest('.pr-link')) return;
   event.preventDefault();
@@ -1468,6 +1523,7 @@ enableWindowDrag();
 applyTheme();
 applyFilesCollapsed();
 enableTooltips();
+routeLinksToBrowser(openInBrowser, (message) => toast(message, true));
 systemDark.addEventListener('change', () => theme === 'system' && applyTheme());
 document.querySelector('.file-tree .section-title')?.addEventListener('click', toggleFilesSection);
 dom.filterBar.addEventListener('click', (event) => {
