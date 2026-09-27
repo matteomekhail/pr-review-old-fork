@@ -8,6 +8,7 @@ import { Layout } from './layout';
 import { Lightbox, collectMedia } from './lightbox';
 import { enableWindowDrag } from './window-drag';
 import { enableTooltips } from './tooltip';
+import { groupPulls, type PullGroup } from './grouping';
 import { isReady, isRecent, isSmall, matchesSmartFilter, sortPulls, type SmartFilter, type SortOrder } from './smart';
 import { assessReadiness, isReadinessAvailable, type ReadinessResult } from './readiness';
 
@@ -171,11 +172,17 @@ function matchesText(pull: PullRequest, needle: string): boolean {
   return `${pull.title} ${pull.repository.nameWithOwner} #${pull.number} ${pull.author?.login ?? ''} ${pull.headRefName}`.toLowerCase().includes(needle);
 }
 
-function visiblePulls(): PullRequest[] {
+function filteredPulls(): PullRequest[] {
   const needle = state.filter.trim().toLowerCase();
   const now = Date.now();
   const matching = state.pulls.filter((pull) => matchesSmartFilter(pull, state.smartFilter, now) && matchesText(pull, needle));
   return sortPulls(matching, state.sortOrder, now, aiScoreFor);
+}
+
+function visiblePulls(): PullRequest[] {
+  const pulls = filteredPulls();
+  if (!isGrouped || groups.length === 0) return pulls;
+  return listSections(pulls).flatMap((section) => (section.group != null && collapsedGroups.has(section.group.id) ? [] : section.pulls));
 }
 
 function renderSmartCounts(): void {
@@ -263,10 +270,110 @@ function renderCounts(): void {
   });
 }
 
+const GROUPS_CACHE_KEY = 'jevGroups.v1';
+let isGrouped = localStorage.getItem('grouped') === '1';
+let groups: PullGroup[] = [];
+let groupsSignature = '';
+let isGrouping = false;
+const collapsedGroups = new Set<string>(JSON.parse(localStorage.getItem('collapsedGroups') ?? '[]') as string[]);
+
+function pullsSignature(pulls: readonly PullRequest[]): string {
+  return pulls.map((pull) => pull.id).sort().join(',');
+}
+
+function loadCachedGroups(pulls: readonly PullRequest[]): void {
+  try {
+    const cached = JSON.parse(localStorage.getItem(GROUPS_CACHE_KEY) ?? 'null') as { signature: string; groups: PullGroup[] } | null;
+    if (cached?.signature === pullsSignature(pulls)) {
+      groups = cached.groups;
+      groupsSignature = cached.signature;
+    }
+  } catch {
+    groups = [];
+  }
+}
+
+async function ensureGroups(): Promise<void> {
+  const signature = pullsSignature(state.pulls);
+  if (!isGrouped || !isAiEnabled || isGrouping || signature === groupsSignature || state.pulls.length < 2) return;
+  loadCachedGroups(state.pulls);
+  if (groupsSignature === signature) return renderList();
+  isGrouping = true;
+  renderList();
+  try {
+    groups = await groupPulls(state.pulls);
+    groupsSignature = signature;
+    localStorage.setItem(GROUPS_CACHE_KEY, JSON.stringify({ signature, groups }));
+    toast(`Grouped into ${groups.length} efforts`);
+  } catch (error) {
+    toast(`Grouping failed: ${errorMessage(error)}`, true);
+  } finally {
+    isGrouping = false;
+    renderList();
+  }
+}
+
+function toggleGrouping(): void {
+  if (!isAiEnabled) {
+    toast('Grouping uses Jev. Set OPENROUTER_API_KEY to enable it.', true);
+    return;
+  }
+  isGrouped = !isGrouped;
+  localStorage.setItem('grouped', isGrouped ? '1' : '0');
+  renderList();
+  void ensureGroups();
+}
+
+function averageReadiness(pulls: PullRequest[]): number {
+  const now = Date.now();
+  const scores = pulls.map((pull) => aiScoreFor(pull) ?? (isReady(pull) ? 0.6 : 0.2) - Math.min(0.2, (now - Date.parse(pull.updatedAt)) / 8.64e8));
+  return scores.reduce((total, score) => total + score, 0) / Math.max(1, scores.length);
+}
+
+interface ListSection {
+  group: PullGroup | null;
+  pulls: PullRequest[];
+}
+
+function listSections(pulls: PullRequest[]): ListSection[] {
+  if (!isGrouped || groups.length === 0) return [{ group: null, pulls }];
+  const order = new Map(pulls.map((pull, index) => [pull.id, index]));
+  const assigned = new Set<string>();
+  const sections = groups
+    .map((group): ListSection => {
+      const members = group.pullIds.filter((id) => order.has(id)).sort((left, right) => (order.get(left) ?? 0) - (order.get(right) ?? 0));
+      members.forEach((id) => assigned.add(id));
+      return { group, pulls: members.map((id) => pulls[order.get(id) ?? 0] as PullRequest) };
+    })
+    .filter((section) => section.pulls.length > 0)
+    .sort((left, right) => averageReadiness(right.pulls) - averageReadiness(left.pulls));
+  const rest = pulls.filter((pull) => !assigned.has(pull.id));
+  if (rest.length > 0) sections.push({ group: { id: 'ungrouped', label: 'Other', pullIds: rest.map((pull) => pull.id) }, pulls: rest });
+  return sections;
+}
+
+function groupHeader(section: ListSection): string {
+  const group = section.group;
+  if (group == null) return '';
+  const isCollapsed = collapsedGroups.has(group.id);
+  const ready = section.pulls.filter(isReady).length;
+  const lines = section.pulls.reduce((total, pull) => total + pull.additions + pull.deletions, 0);
+  const readiness = Math.round(Math.max(0, Math.min(1, averageReadiness(section.pulls))) * 100);
+  return `<li class="group-row${isCollapsed ? ' collapsed' : ''}" data-group="${escapeHtml(group.id)}">
+    <span class="caret">›</span>
+    <span class="group-label" title="${escapeHtml(group.label)}">${escapeHtml(group.label)}</span>
+    <span class="group-meta"><span class="group-count">${section.pulls.length}</span>${ready > 0 ? `<span class="group-ready" title="${ready} ready to merge"><i class="dot-ok"></i>${ready}</span>` : ''}<span class="group-lines">${lines.toLocaleString()} lines</span>${isAiEnabled ? `<span class="ai-score ${readiness >= 65 ? 'ok' : readiness >= 40 ? 'wait' : 'bad'}" title="Average readiness">${readiness}</span>` : ''}
+    <button class="group-select" data-group-select="${escapeHtml(group.id)}" title="Select all in group">Select</button></span>
+  </li>`;
+}
+
 function renderList(): void {
-  const pulls = visiblePulls();
+  const pulls = filteredPulls();
   const primaryRepo = mostCommonRepo();
-  dom.list.innerHTML = pulls
+  const sections = listSections(pulls);
+  const groupingNote = isGrouped && isGrouping ? '<li class="group-status"><span class="spinner"></span>Grouping related work with Jev…</li>' : '';
+  dom.list.classList.toggle('grouped', isGrouped && groups.length > 0);
+  dom.list.innerHTML = groupingNote + sections.map((section) => groupHeader(section) + (section.group != null && collapsedGroups.has(section.group.id) ? '' : section.pulls
     .map(
       (pull) => `<li data-id="${pull.id}" class="${pull.id === state.selectedId ? 'selected' : ''}${state.checkedIds.has(pull.id) ? ' checked' : ''}${pull.queueEntry != null ? ' queued' : ''}">
         <span class="check-box" data-check="${pull.id}" role="checkbox" aria-checked="${state.checkedIds.has(pull.id)}" title="Select  E / ⇧V"></span>
@@ -276,7 +383,8 @@ function renderList(): void {
         <span class="right">${pull.queueEntry != null ? `<span class="queue-pill" title="${escapeHtml(queueLabel(pull))}">Queued</span>` : ''}${readinessDot(pull)}${checksIcon(pull)}<span class="delta"><i class="add">+${pull.additions}</i> <i class="del">−${pull.deletions}</i></span><span class="age">${relativeTime(pull.updatedAt)}</span>${avatar(pull)}</span>
       </li>`,
     )
-    .join('');
+    .join(''))).join('');
+  document.getElementById('toggle-grouping')?.classList.toggle('active', isGrouped);
   renderCounts();
   renderSmartCounts();
   renderBulkBar();
@@ -738,6 +846,7 @@ function refresh(kind: QueueKind, isForced = false): Promise<void> {
       renderCounts();
       if (kind === state.kind) applyQueue(merged);
       if (kind === state.kind) void scoreWithJev(merged);
+      if (kind === state.kind) void ensureGroups();
       return loadMergeStates(kind, merged);
     })
     .catch((error: unknown) => {
@@ -774,6 +883,8 @@ function switchKind(kind: QueueKind): void {
   const first = visiblePulls()[0];
   if (first != null) void select(first);
   void scoreWithJev(state.pulls);
+  groupsSignature = '';
+  void ensureGroups();
   void refresh(kind);
 }
 
@@ -1134,6 +1245,8 @@ const COMMANDS: Command[] = [
   { id: 'smart-ready', section: 'Filter', title: 'Show ready to merge', aliases: 'green approved mergeable', keys: ['⌥1'], run: () => setSmartFilter('ready') },
   { id: 'smart-small', section: 'Filter', title: 'Show small diffs', aliases: 'tiny quick', keys: ['⌥2'], run: () => setSmartFilter('small') },
   { id: 'smart-recent', section: 'Filter', title: 'Show recently updated', aliases: 'new fresh', keys: ['⌥3'], run: () => setSmartFilter('recent') },
+  { id: 'group', section: 'Filter', title: 'Group related work (Jev)', aliases: 'cluster effort category batch smart group', keys: ['t'], run: toggleGrouping },
+  { id: 'regroup', section: 'Filter', title: 'Regroup with Jev', aliases: 'refresh groups cluster', keys: [], run: () => { groupsSignature = ''; localStorage.removeItem(GROUPS_CACHE_KEY); void ensureGroups(); } },
   { id: 'sort', section: 'Filter', title: 'Cycle sort (smart / updated / smallest)', aliases: 'order', keys: ['⇧s'], run: cycleSortOrder },
 
   { id: 'visual', section: 'Select', title: 'Visual select mode (vim V)', aliases: 'multi range bulk vim', keys: ['⇧v'], run: toggleVisualMode, isEnabled: hasPull },
@@ -1230,6 +1343,21 @@ document.addEventListener('keydown', (event) => {
 
 dom.list.addEventListener('click', (event) => {
   const target = event.target as HTMLElement;
+  const selectAll = target.closest<HTMLElement>('[data-group-select]');
+  if (selectAll != null) {
+    const section = listSections(filteredPulls()).find((candidate) => candidate.group?.id === selectAll.dataset.groupSelect);
+    if (section != null) setChecked(section.pulls.map((pull) => pull.id), true);
+    return;
+  }
+  const header = target.closest<HTMLElement>('.group-row');
+  if (header?.dataset.group != null) {
+    const id = header.dataset.group;
+    if (collapsedGroups.has(id)) collapsedGroups.delete(id);
+    else collapsedGroups.add(id);
+    localStorage.setItem('collapsedGroups', JSON.stringify([...collapsedGroups]));
+    renderList();
+    return;
+  }
   const row = target.closest<HTMLElement>('li');
   const rowId = row?.dataset.id;
   if (rowId != null && (target.closest('.check-box') != null || event.metaKey || event.shiftKey)) {
@@ -1311,6 +1439,7 @@ void isReadinessAvailable().then((isAvailable) => {
   isAiEnabled = isAvailable;
   renderAiStatus();
   if (isAvailable) void scoreWithJev(state.pulls);
+  if (isAvailable) void ensureGroups();
 });
 
 void refresh(state.kind, true).then(() => {
