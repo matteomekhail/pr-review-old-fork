@@ -270,7 +270,7 @@ function renderCounts(): void {
   });
 }
 
-const GROUPS_CACHE_KEY = 'jevGroups.v1';
+const GROUPS_CACHE_KEY = 'jevGroups.v2';
 let isGrouped = localStorage.getItem('grouped') === '1';
 let groups: PullGroup[] = [];
 let groupsSignature = '';
@@ -371,7 +371,7 @@ function renderList(): void {
   const pulls = filteredPulls();
   const primaryRepo = mostCommonRepo();
   const sections = listSections(pulls);
-  const groupingNote = isGrouped && isGrouping ? '<li class="group-status"><span class="spinner"></span>Grouping related work with Jev…</li>' : '';
+  const groupingNote = !isGrouped ? '' : isGrouping ? '<li class="group-status"><span class="spinner"></span>Grouping related work with Jev…</li>' : groups.length === 0 ? '<li class="group-status">No groups yet · press T again or run “Regroup with Jev”</li>' : '';
   dom.list.classList.toggle('grouped', isGrouped && groups.length > 0);
   dom.list.innerHTML = groupingNote + sections.map((section) => groupHeader(section) + (section.group != null && collapsedGroups.has(section.group.id) ? '' : section.pulls
     .map(

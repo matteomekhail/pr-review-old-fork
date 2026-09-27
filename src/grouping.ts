@@ -18,7 +18,7 @@ interface SystemOneResponse {
   error?: { message?: string };
 }
 
-const CHUNK_SIZE = 16;
+const CHUNK_SIZE = 8;
 const PAIR_THRESHOLD = 0.3;
 const MERGE_THRESHOLD = 0.5;
 const MAX_PULLS = 200;
@@ -31,9 +31,18 @@ function branchWords(branch: string): string {
   return branch.replace(/^[^/]+\//, '').replace(/^\d+-/, '').replace(/[-_/]+/g, ' ').trim();
 }
 
+const MAX_TITLE_CHARS = 110;
+
 function describe(pull: PullRequest): string {
-  const words = branchWords(pull.headRefName);
-  return words === '' ? pull.title : `${pull.title} [branch: ${words}]`;
+  const title = pull.title.length > MAX_TITLE_CHARS ? `${pull.title.slice(0, MAX_TITLE_CHARS)}…` : pull.title;
+  const words = branchWords(pull.headRefName).split(' ').slice(0, 6).join(' ');
+  return words === '' ? title : `${title} [${words}]`;
+}
+
+function mostCommon(values: readonly string[]): string | undefined {
+  const counts = new Map<string, number>();
+  values.forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1));
+  return [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0];
 }
 
 async function askJev(state: unknown, questions: Record<string, unknown>): Promise<Record<string, ChoiceAnswer>> {
@@ -112,17 +121,25 @@ function labelFor(pulls: PullRequest[]): string {
 export async function groupPulls(pulls: readonly PullRequest[]): Promise<PullGroup[]> {
   const candidates = pulls.slice(0, MAX_PULLS);
   if (candidates.length < 2) return [];
-  const byKey = new Map(candidates.map((pull) => [`${pull.repository.nameWithOwner.split('/')[1] ?? pull.repository.nameWithOwner}#${pull.number}`, pull]));
+  const primaryRepo = mostCommon(candidates.map((pull) => pull.repository.nameWithOwner));
+  const byKey = new Map(candidates.map((pull) => [pull.repository.nameWithOwner === primaryRepo ? `#${pull.number}` : `${pull.repository.nameWithOwner.split('/')[1] ?? pull.repository.nameWithOwner}#${pull.number}`, pull]));
   const keys = [...byKey.keys()];
   const state = { pull_requests: Object.fromEntries(keys.map((key) => [key, describe(byKey.get(key) as PullRequest)])) };
   const sets = new DisjointSet();
   keys.forEach((key) => sets.add(key));
   const chunks = Array.from({ length: Math.ceil(keys.length / CHUNK_SIZE) }, (_, index) => keys.slice(index * CHUNK_SIZE, (index + 1) * CHUNK_SIZE));
   const incoming = new Map<string, number>();
+  const failures: string[] = [];
   await Promise.all(
     chunks.map(async (chunk) => {
       const questions = Object.fromEntries(chunk.map((key, index) => [`q${index}`, choiceQuestion(`${key} — ${state.pull_requests[key]}`, PAIR_QUESTION, keys, key)]));
-      const answers = await askJev(state, questions);
+      let answers: Record<string, ChoiceAnswer>;
+      try {
+        answers = await askJev(state, questions);
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error));
+        return;
+      }
       chunk.forEach((key, index) => {
         const answer = answers[`q${index}`];
         if (answer == null || answer.choice === NONE || (answer.probabilities[answer.choice] ?? 0) < PAIR_THRESHOLD || !byKey.has(answer.choice)) return;
@@ -131,6 +148,7 @@ export async function groupPulls(pulls: readonly PullRequest[]): Promise<PullGro
       });
     }),
   );
+  if (failures.length === chunks.length) throw new Error(failures[0] ?? 'Jev grouping failed');
   const clusters = sets.groups().filter((group) => group.length > 1);
   const merged = await mergeClusters(clusters, byKey);
   return merged
@@ -144,7 +162,7 @@ export async function groupPulls(pulls: readonly PullRequest[]): Promise<PullGro
 async function mergeClusters(clusters: string[][], byKey: Map<string, PullRequest>): Promise<string[][]> {
   if (clusters.length < 2) return clusters;
   const groupKeys = clusters.map((_, index) => `g${index}`);
-  const state = { groups: Object.fromEntries(clusters.map((cluster, index) => [`g${index}`, cluster.map((key) => byKey.get(key)?.title ?? key).join(' | ')])) };
+  const state = { groups: Object.fromEntries(clusters.map((cluster, index) => [`g${index}`, cluster.slice(0, 8).map((key) => (byKey.get(key)?.title ?? key).slice(0, 90)).join(' | ')])) };
   const questions = Object.fromEntries(groupKeys.map((key) => [key, choiceQuestion(`${key} — ${state.groups[key]}`, GROUP_QUESTION, groupKeys, key)]));
   let answers: Record<string, ChoiceAnswer>;
   try {

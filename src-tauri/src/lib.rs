@@ -18,7 +18,7 @@ const MAX_MERGE_STATE_IDS: usize = 25;
 
 const MAX_DIFF_FALLBACK_FILES: usize = 3000;
 const SYSTEM_ONE_URL: &str = "https://openrouter.ai/api/v1/systemone";
-const MAX_READINESS_STATE_BYTES: usize = 60_000;
+const MAX_READINESS_STATE_BYTES: usize = 600_000;
 
 static OPENROUTER_KEY: OnceLock<Option<String>> = OnceLock::new();
 

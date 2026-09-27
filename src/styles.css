@@ -425,7 +425,7 @@ img { -webkit-user-drag: none; }
 #tooltip .tip-or { color: #9a9ea6; margin: 0 3px; }
 :root[data-theme=light] #tooltip { background: #1d1e21; border-color: #1d1e21; }
 
-#pr-list li.group-row { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 14px; background: var(--bg-elev); border-bottom: 1px solid var(--border-soft); position: sticky; top: 0; z-index: 2; cursor: pointer; content-visibility: visible; }
+#pr-list li.group-row { display: flex !important; grid-template-columns: none !important; align-items: center; gap: 8px; height: 34px !important; padding: 0 12px 0 14px !important; background: var(--bg-elev); border-bottom: 1px solid var(--border-soft); position: sticky; top: 0; z-index: 2; cursor: pointer; content-visibility: visible !important; contain-intrinsic-size: none; }
 #pr-list li.group-row:hover { background: var(--bg-hover); }
 #pr-list li.group-row .caret { transform: rotate(90deg); transition: transform .12s; color: var(--text-4); width: 10px; }
 #pr-list li.group-row.collapsed .caret { transform: rotate(0deg); }
@@ -438,11 +438,13 @@ img { -webkit-user-drag: none; }
 .group-select { height: 20px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--border); background: none; color: var(--text-3); font-size: 11px; opacity: 0; }
 #pr-list li.group-row:hover .group-select { opacity: 1; }
 .group-select:hover { color: var(--text); background: var(--bg-active); }
-#pr-list li.group-status { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 16px; color: var(--text-3); font-size: 12px; border-bottom: 1px solid var(--border-soft); }
+#pr-list li.group-status { display: flex !important; grid-template-columns: none !important; content-visibility: visible !important; align-items: center; gap: 8px; height: 34px; padding: 0 16px; color: var(--text-3); font-size: 12px; border-bottom: 1px solid var(--border-soft); }
 #pr-list.grouped li:not(.group-row):not(.group-status) { padding-left: 26px; }
 #toggle-grouping { gap: 5px; }
 #toggle-grouping.active { color: #aab1f0; border-color: #33386b; background: var(--accent-soft, rgb(94 106 210 / .14)); }
 :root[data-theme=light] #toggle-grouping.active { color: var(--accent); }
 
 .filter-bar { gap: 4px; }
-#list-pane.narrow #toggle-grouping { font-size: 0; gap: 0; padding: 0 7px; }
+#toggle-grouping { flex: none; order: -1; }
+.filter-bar .ai-status { margin-left: 0; }
+.filter-bar .sort { margin-left: auto; }
