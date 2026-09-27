@@ -28,6 +28,11 @@ const HEADER_CSS = `
 [data-diffs-header=default]:hover { background: color-mix(in srgb, var(--diffs-bg) 88%, white); }
 `;
 
+const FLUSH_CSS = `
+:host { border-width: 0 0 1px; border-radius: 0; }
+[data-diffs-header=default] { border-radius: 0; }
+`;
+
 const workerPool = getOrCreateWorkerPoolSingleton({
   poolOptions: { workerFactory: () => new DiffWorker(), poolSize: WORKER_COUNT },
   highlighterOptions: { theme: { dark: 'pierre-dark', light: 'pierre-light' }, lineDiffType: 'word-alt' },
@@ -63,6 +68,7 @@ export class DiffView {
   private readonly root: HTMLElement;
   private readonly callbacks: DiffViewCallbacks;
   private header: HTMLElement | undefined;
+  private isFlush = false;
   private diffStyle: DiffStyle;
   private collapsed = new Set<string>();
   private ids: string[] = [];
@@ -94,6 +100,13 @@ export class DiffView {
 
   collapsedCount(): number {
     return this.collapsed.size;
+  }
+
+  setFlush(isFlush: boolean): void {
+    if (this.isFlush === isFlush) return;
+    this.isFlush = isFlush;
+    this.root.classList.toggle('flush', isFlush);
+    this.view.setOptions(this.options());
   }
 
   setStyle(diffStyle: DiffStyle): void {
@@ -147,8 +160,8 @@ export class DiffView {
       hunkSeparators: 'line-info',
       overflow: 'scroll',
       stickyHeaders: true,
-      unsafeCSS: HEADER_CSS,
-      layout: { paddingTop: 0, paddingBottom: 320, gap: 10 },
+      unsafeCSS: this.isFlush ? `${HEADER_CSS}${FLUSH_CSS}` : HEADER_CSS,
+      layout: { paddingTop: 0, paddingBottom: 320, gap: this.isFlush ? 0 : 10 },
       renderCodeViewHeader: header == null ? undefined : () => header,
       renderHeaderPrefix: (_fileDiff, context) => chevron(context.item.id, this.collapsed.has(context.item.id)),
     };

@@ -307,7 +307,7 @@ img { -webkit-user-drag: none; }
 #app.mode-side #inspector .file-tree { flex: none; max-height: 28%; min-height: 0; overflow: hidden; border-bottom: 1px solid var(--border-soft); }
 #app.mode-side #inspector #files { contain: none; }
 #app.mode-side #inspector #diff-root { min-height: 0; overflow: auto; }
-#app.mode-side #inspector #diff-root { flex: 1; padding: 12px 16px 0; }
+#app.mode-side #inspector #diff-root { flex: 1; padding: 0; }
 #app.mode-side.hide-description #desc-pane, #app.mode-side.hide-description .resizer[data-resize=description] { display: none; }
 #app.mode-side.hide-inspector #inspector { display: flex; }
 

@@ -84,6 +84,7 @@ const state: State = {
 
 const diffCache = new Map<string, Promise<ParsedFile[]>>();
 const queueCache = new Map<QueueKind, PullRequest[]>();
+let isSelectedQueued = false;
 const diffView = new DiffView(dom.diffRoot, state.diffStyle, { onToggle: (id, isCollapsed) => markFileCollapsed(id, isCollapsed) });
 let currentFiles: ParsedFile[] = [];
 let renderToken = 0;
@@ -91,8 +92,6 @@ let toastTimer: number | undefined;
 
 dom.mergeMethod.value = localStorage.getItem('mergeMethod') ?? 'squash';
 syncMergeLabel();
-
-let isSelectedQueued = false;
 
 function syncMergeLabel(): void {
   const label = isSelectedQueued ? 'Merge when ready' : MERGE_LABELS[dom.mergeMethod.value as MergeMethod];
@@ -934,6 +933,7 @@ let reviewMode: ReviewMode = localStorage.getItem('reviewMode') === 'stacked' ? 
 function applyReviewMode(): void {
   const isSide = reviewMode === 'side';
   element('app').classList.toggle('mode-side', isSide);
+  diffView.setFlush(isSide);
   if (isSide) dom.inspector.append(dom.diffRoot);
   else dom.bodySplit.insertBefore(dom.diffRoot, dom.bodySplit.querySelector('.resizer[data-resize="inspector"]'));
   dom.toggleMode.innerHTML = `${isSide ? 'Stacked' : 'Side by side'} <kbd>V</kbd>`;
