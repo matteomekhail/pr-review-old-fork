@@ -317,6 +317,10 @@ async fn open_in_browser(url: String) -> Result<(), String> {
     if !(is_github || is_github_media) || url.chars().any(|character| character.is_whitespace() || character.is_control()) {
         return Err("refusing to open non-GitHub URL".to_string());
     }
+    let chrome = Command::new("/usr/bin/open").args(["-b", "com.google.Chrome", &url]).status().await;
+    if matches!(chrome, Ok(status) if status.success()) {
+        return Ok(());
+    }
     Command::new("/usr/bin/open").arg(&url).status().await.map_err(|error| error.to_string())?;
     Ok(())
 }

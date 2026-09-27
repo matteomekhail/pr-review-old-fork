@@ -9,6 +9,7 @@ import { Lightbox, collectMedia } from './lightbox';
 import { enableWindowDrag } from './window-drag';
 import { enableTooltips } from './tooltip';
 import { groupPulls, type PullGroup } from './grouping';
+import { imageUrlsInHtml, preloadImages } from './image-cache';
 import { isReady, isRecent, isSmall, matchesSmartFilter, sortPulls, type SmartFilter, type SortOrder } from './smart';
 import { assessReadiness, isReadinessAvailable, type ReadinessResult } from './readiness';
 
@@ -24,7 +25,7 @@ interface State {
   diffStyle: DiffStyle;
 }
 
-const PREFETCH_AHEAD = 3;
+const PREFETCH_AHEAD = 5;
 const DIFF_CACHE_LIMIT = 24;
 const QUEUE_REFRESH_MS = 120_000;
 const VIEW_TITLES: Record<QueueKind, string> = { review: 'Review requested', involved: 'Involved', mine: 'Created by me' };
@@ -97,7 +98,9 @@ dom.mergeMethod.value = localStorage.getItem('mergeMethod') ?? 'squash';
 syncMergeLabel();
 
 function syncMergeLabel(): void {
-  const label = isSelectedQueued ? 'Merge when ready' : MERGE_LABELS[dom.mergeMethod.value as MergeMethod];
+  const selectedCount = state.checkedIds.size;
+  const baseLabel = isSelectedQueued ? 'Merge when ready' : MERGE_LABELS[dom.mergeMethod.value as MergeMethod];
+  const label = selectedCount > 1 ? `${isSelectedQueued ? 'Queue' : 'Merge'} ${selectedCount} selected` : baseLabel;
   dom.merge.innerHTML = `${label} <kbd>⌘</kbd><kbd>↵</kbd>`;
   dom.merge.title = isSelectedQueued ? 'Add to merge queue  ⌘↵' : 'Merge  ⌘↵';
   dom.mergeMethod.hidden = isSelectedQueued;
@@ -145,11 +148,17 @@ function diffKey(pull: PullRequest): string {
 
 const bodyCache = new Map<string, Promise<string>>();
 
-function loadBody(pull: PullRequest): Promise<string> {
+function loadBody(pull: PullRequest, isPriority = false): Promise<string> {
   const key = diffKey(pull);
   const cached = bodyCache.get(key);
-  if (cached != null) return cached;
-  const pending = fetchBody(pull);
+  if (cached != null) {
+    void cached.then((html) => preloadImages(imageUrlsInHtml(html), isPriority), () => undefined);
+    return cached;
+  }
+  const pending = fetchBody(pull).then((html) => {
+    preloadImages(imageUrlsInHtml(html), isPriority);
+    return html;
+  });
   pending.catch(() => bodyCache.delete(key));
   bodyCache.set(key, pending);
   if (bodyCache.size > DIFF_CACHE_LIMIT) bodyCache.delete(bodyCache.keys().next().value ?? '');
@@ -524,7 +533,7 @@ function renderDetail(pull: PullRequest): void {
     diffView.setHeader(description);
   }
   const token = renderToken;
-  void loadBody(pull).then(
+  void loadBody(pull, true).then(
     (bodyHtml) => {
       if (token !== renderToken) return;
       const target = description.querySelector('.markdown');
@@ -895,6 +904,7 @@ function checkedPulls(): PullRequest[] {
 function renderBulkBar(): void {
   const checked = checkedPulls();
   const hasSelection = checked.length > 0;
+  syncMergeLabel();
   dom.bulkBar.hidden = !hasSelection;
   dom.list.classList.toggle('selecting', hasSelection);
   if (!hasSelection) return;
@@ -1290,7 +1300,7 @@ const COMMANDS: Command[] = [
   { id: 'diff-style', section: 'Diff', title: 'Toggle split / unified diff', aliases: 'side by side inline view', keys: ['s', '⌘⌥s'], run: toggleStyle },
 
   { id: 'approve', section: 'Pull request', title: 'Approve', aliases: 'lgtm review accept', keys: ['a'], run: () => void approveSelected(), isEnabled: hasPull },
-  { id: 'merge', section: 'Pull request', title: 'Merge…', aliases: 'squash ship land', keys: ['⌘↵', 'm'], run: () => void mergeSelected(), isEnabled: hasPull },
+  { id: 'merge', section: 'Pull request', title: 'Merge (all selected when several are checked)', aliases: 'squash ship land queue', keys: ['⌘↵', 'm'], run: () => void (state.checkedIds.size > 1 ? bulkMerge() : mergeSelected()), isEnabled: hasPull },
   { id: 'merge-method', section: 'Pull request', title: 'Cycle merge method', keys: ['⇧m'], run: cycleMergeMethod },
   { id: 'open', section: 'Pull request', title: 'Open on GitHub', aliases: 'browser link url web', keys: ['o', '⌘o', 'g o'], run: openSelectedOnGitHub, isEnabled: hasPull },
   { id: 'copy-url', section: 'Pull request', title: 'Copy link', keys: ['⌘⇧c', 'y'], run: () => { const pull = selectedPull(); if (pull != null) copyText(pull.url, 'link'); }, isEnabled: hasPull },
@@ -1425,7 +1435,7 @@ dom.bulkApprove.addEventListener('click', () => void bulkApprove());
 dom.bulkMerge.addEventListener('click', () => void bulkMerge());
 syncPaneButtons();
 dom.approve.addEventListener('click', () => void approveSelected());
-dom.merge.addEventListener('click', () => void mergeSelected());
+dom.merge.addEventListener('click', () => void (state.checkedIds.size > 1 ? bulkMerge() : mergeSelected()));
 dom.mergeMethod.addEventListener('change', () => {
   localStorage.setItem('mergeMethod', dom.mergeMethod.value);
   syncMergeLabel();

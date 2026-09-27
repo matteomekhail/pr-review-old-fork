@@ -14,7 +14,10 @@ function cleanElement(node: Element): void {
   }
   if (node.tagName === 'INPUT' && node.getAttribute('type') !== 'checkbox') node.remove();
   if (node.tagName === 'INPUT') node.setAttribute('disabled', '');
-  if (node.tagName === 'IMG') node.setAttribute('loading', 'lazy');
+  if (node.tagName === 'IMG') {
+    node.setAttribute('loading', 'eager');
+    node.setAttribute('decoding', 'async');
+  }
   if (node.tagName === 'VIDEO') node.setAttribute('preload', 'metadata');
 }
 
