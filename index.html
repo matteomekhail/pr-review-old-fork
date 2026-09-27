@@ -9,8 +9,8 @@
   <body>
     <div id="app">
       <aside id="sidebar">
-        <div class="drag"></div>
-        <div class="workspace"><img class="logo" src="/favicon.png" alt="" /><span>Pull requests</span></div>
+        <div class="drag" data-tauri-drag-region></div>
+        <div class="workspace" data-tauri-drag-region><img class="logo" src="/favicon.png" alt="" /><span>Pull requests</span></div>
         <nav class="views">
           <button data-kind="review"><span class="icon">◎</span>Review requested<span class="count" data-count="review"></span></button>
           <button data-kind="involved"><span class="icon">◇</span>Involved<span class="count" data-count="involved"></span></button>
@@ -24,8 +24,8 @@
       <div class="resizer" data-resize="sidebar" title="Drag to resize · double-click to reset"></div>
 
       <section id="list-pane">
-        <header class="pane-head drag-region">
-          <h2 id="view-title">Created by me</h2>
+        <header class="pane-head drag-region" data-tauri-drag-region>
+          <h2 id="view-title" data-tauri-drag-region>Created by me</h2>
           <div class="search"><span>⌕</span><input id="filter" placeholder="Filter" spellcheck="false" autocomplete="off" /><kbd>F</kbd></div>
         </header>
         <div class="filter-bar" id="filter-bar">
@@ -52,14 +52,14 @@
       <div class="resizer" data-resize="list" title="Drag to resize · double-click to reset"></div>
 
       <main id="detail">
-        <div id="empty" class="empty">Loading…</div>
+        <div id="empty" class="empty" data-tauri-drag-region>Loading…</div>
         <section id="pr" hidden>
-          <header id="pr-head" class="drag-region">
-            <div class="head-left">
+          <header id="pr-head" class="drag-region" data-tauri-drag-region>
+            <div class="head-left" data-tauri-drag-region>
               <button class="icon-button" id="toggle-sidebar" title="Toggle sidebar  ⌘B">
                 <svg viewBox="0 0 16 16" width="14" height="14"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><line x1="5.5" y1="2.5" x2="5.5" y2="13.5" stroke="currentColor"/></svg>
               </button>
-              <div class="crumbs" id="crumbs"></div>
+              <div class="crumbs" id="crumbs" data-tauri-drag-region></div>
             </div>
             <div class="actions">
               <button id="toggle-mode" class="ghost" title="Side-by-side: description left, diff right  V">Side by side <kbd>V</kbd></button>
@@ -78,7 +78,7 @@
               </button>
             </div>
           </header>
-          <div id="status-bar" class="status-bar"></div>
+          <div id="status-bar" class="status-bar" data-tauri-drag-region></div>
           <div id="pr-body-split">
             <div id="desc-pane"></div>
             <div class="resizer" data-resize="description" title="Drag to resize · double-click to reset"></div>

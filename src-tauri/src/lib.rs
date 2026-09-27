@@ -204,12 +204,22 @@ async fn merge_queue(repo: String, base: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn merge(repo: String, number: u64, method: MergeMethod, queued: bool) -> Result<String, String> {
+async fn merge(repo: String, number: u64, method: MergeMethod, queued: bool, node_id: Option<String>) -> Result<String, String> {
     validate_repo(&repo)?;
     let number = number.to_string();
     if queued {
-        let output = gh(&["pr", "merge", &number, "-R", &repo]).await?;
-        return Ok(if output.trim().is_empty() { format!("Added #{number} to the merge queue") } else { output });
+        let id = node_id.filter(|id| is_node_id(id)).ok_or("missing pull request id")?;
+        let mutation = "mutation($id: ID!) { enqueuePullRequest(input: { pullRequestId: $id }) { mergeQueueEntry { position state } } }";
+        let output = gh(&["api", "graphql", "-f", &format!("query={mutation}"), "-f", &format!("id={id}")]).await?;
+        let parsed: serde_json::Value = serde_json::from_str(&output).map_err(|error| error.to_string())?;
+        if let Some(message) = parsed["errors"][0]["message"].as_str() {
+            return Err(message.to_string());
+        }
+        let position = parsed["data"]["enqueuePullRequest"]["mergeQueueEntry"]["position"].as_i64();
+        return Ok(match position {
+            Some(position) => format!("#{number} queued at position {}", position + 1),
+            None => format!("#{number} added to the merge queue"),
+        });
     }
     let flag = match method {
         MergeMethod::Squash => "--squash",

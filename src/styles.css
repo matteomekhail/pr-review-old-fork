@@ -314,8 +314,11 @@ img { -webkit-user-drag: none; }
 .filter-bar { flex-wrap: nowrap; }
 .chip { padding: 0 8px; }
 .actions { flex: none; }
-#pr-head .ghost kbd, #pr-head .primary kbd { display: none; }
-@media (min-width: 1500px) { #pr-head .ghost kbd, #pr-head .primary kbd { display: inline-block; } }
+#pr-head .actions button.ghost, #pr-head .actions button.primary { padding: 0 8px; gap: 0; }
+#pr-head .actions kbd { margin-left: 6px; min-width: 16px; padding: 2px 4px; }
+#pr-head .actions kbd + kbd { margin-left: 2px; }
+#pr-head .head-left { flex: 1 1 auto; min-width: 60px; }
+#pr-head .crumbs .repo { max-width: 160px; }
 
 .description .markdown img, .description .markdown video { cursor: zoom-in; }
 .description .markdown video { max-width: 100%; border-radius: 8px; border: 1px solid var(--border-soft); }
@@ -347,3 +350,6 @@ img { -webkit-user-drag: none; }
 
 .split-button select[hidden] { display: none; }
 .split-button select[hidden] ~ *, .split-button:has(select[hidden]) button.primary { border-radius: var(--radius); }
+
+[data-tauri-drag-region] { -webkit-user-select: none; user-select: none; }
+#pr-head, .pane-head, #sidebar .drag, .workspace, .status-bar { cursor: default; }

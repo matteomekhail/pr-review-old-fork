@@ -6,6 +6,7 @@ import { CommandRegistry, renderShortcut, type Command } from './commands';
 import { CommandPalette } from './palette';
 import { Layout } from './layout';
 import { Lightbox, collectMedia } from './lightbox';
+import { enableWindowDrag } from './window-drag';
 import { isReady, isRecent, isSmall, matchesSmartFilter, sortPulls, type SmartFilter, type SortOrder } from './smart';
 import { assessReadiness, isReadinessAvailable, type ReadinessResult } from './readiness';
 
@@ -909,7 +910,7 @@ async function mergeSelected(): Promise<void> {
   dom.merge.disabled = true;
   try {
     const result = await mergePull(pull, method);
-    toast(isQueued ? `#${pull.number} added to the merge queue` : (result.trim().split('\n').at(-1) ?? `Merged #${pull.number}`));
+    toast(result.trim().split('\n').at(-1) ?? (isQueued ? `#${pull.number} added to the merge queue` : `Merged #${pull.number}`));
     movePull(1);
     state.pulls = state.pulls.filter((candidate) => candidate.id !== pull.id);
     renderList();
@@ -945,6 +946,7 @@ function toggleReviewMode(): void {
   reviewMode = reviewMode === 'side' ? 'stacked' : 'side';
   localStorage.setItem('reviewMode', reviewMode);
   applyReviewMode();
+enableWindowDrag();
 }
 
 const layout = new Layout(element('app'), () => syncPaneButtons());

@@ -113,7 +113,7 @@ export function usesMergeQueue(pull: PullRequest): Promise<boolean> {
 
 export async function mergePull(pull: PullRequest, method: MergeMethod): Promise<string> {
   const queued = await usesMergeQueue(pull);
-  return invoke<string>('merge', { repo: pull.repository.nameWithOwner, number: pull.number, method, queued });
+  return invoke<string>('merge', { repo: pull.repository.nameWithOwner, number: pull.number, method, queued, nodeId: pull.id });
 }
 
 export function openInBrowser(url: string): Promise<void> {
