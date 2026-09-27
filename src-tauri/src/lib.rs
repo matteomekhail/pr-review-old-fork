@@ -276,10 +276,14 @@ fn http_client() -> &'static reqwest::Client {
 
 #[tauri::command]
 async fn open_in_browser(url: String) -> Result<(), String> {
-    if !url.starts_with("https://github.com/") || url.chars().any(char::is_whitespace) {
+    let is_github = url.starts_with("https://github.com/");
+    let is_github_media = ["https://camo.githubusercontent.com/", "https://private-user-images.githubusercontent.com/", "https://user-images.githubusercontent.com/", "https://raw.githubusercontent.com/", "https://objects.githubusercontent.com/"]
+        .iter()
+        .any(|prefix| url.starts_with(prefix));
+    if !(is_github || is_github_media) || url.chars().any(|character| character.is_whitespace() || character.is_control()) {
         return Err("refusing to open non-GitHub URL".to_string());
     }
-    Command::new("open").arg(&url).status().await.map_err(|error| error.to_string())?;
+    Command::new("/usr/bin/open").arg(&url).status().await.map_err(|error| error.to_string())?;
     Ok(())
 }
 

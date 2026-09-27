@@ -16,10 +16,10 @@ interface LayoutState {
 const STORAGE_KEY = 'layout.v1';
 
 const PANES: Record<PaneId, PaneSpec> = {
-  sidebar: { variable: '--sidebar-w', defaultWidth: 220, minWidth: 160, maxWidth: 360, side: 'left' },
-  list: { variable: '--list-w', defaultWidth: 420, minWidth: 280, maxWidth: 720, side: 'left' },
-  inspector: { variable: '--inspector-w', defaultWidth: 272, minWidth: 200, maxWidth: 1400, side: 'right' },
-  description: { variable: '--desc-w', defaultWidth: 520, minWidth: 320, maxWidth: 1000, side: 'left' },
+  sidebar: { variable: '--sidebar-w', defaultWidth: 220, minWidth: 150, maxWidth: 520, side: 'left' },
+  list: { variable: '--list-w', defaultWidth: 420, minWidth: 220, maxWidth: 4_000, side: 'left' },
+  inspector: { variable: '--inspector-w', defaultWidth: 272, minWidth: 180, maxWidth: 4_000, side: 'right' },
+  description: { variable: '--desc-w', defaultWidth: 520, minWidth: 220, maxWidth: 4_000, side: 'left' },
 };
 
 const PANE_IDS = Object.keys(PANES) as PaneId[];
@@ -41,9 +41,12 @@ function loadState(): LayoutState {
   }
 }
 
-function clamp(pane: PaneId, width: number): number {
+const MIN_MAIN_WIDTH = 280;
+
+function clamp(pane: PaneId, width: number, others: number): number {
   const { minWidth, maxWidth } = PANES[pane];
-  return Math.round(Math.min(maxWidth, Math.max(minWidth, width)));
+  const room = window.innerWidth - others - MIN_MAIN_WIDTH;
+  return Math.round(Math.max(minWidth, Math.min(maxWidth, room, width)));
 }
 
 export class Layout {
@@ -95,6 +98,12 @@ export class Layout {
     });
   }
 
+  private occupiedWidth(except: PaneId): number {
+    const isSide = this.root.classList.contains('mode-side');
+    const visible: PaneId[] = isSide ? ['sidebar', 'list', 'description'] : ['sidebar', 'list', 'inspector'];
+    return visible.filter((pane) => pane !== except && !this.state.hidden[pane]).reduce((total, pane) => total + this.state.widths[pane], 0);
+  }
+
   private bindHandle(handle: HTMLElement): void {
     const pane = handle.dataset.resize as PaneId;
     handle.addEventListener('dblclick', () => {
@@ -114,7 +123,7 @@ export class Layout {
       const move = (moveEvent: PointerEvent): void => {
         cancelAnimationFrame(frame);
         frame = requestAnimationFrame(() => {
-          this.state.widths[pane] = clamp(pane, startWidth + (moveEvent.clientX - startX) * direction);
+          this.state.widths[pane] = clamp(pane, startWidth + (moveEvent.clientX - startX) * direction, this.occupiedWidth(pane));
           this.apply();
         });
       };

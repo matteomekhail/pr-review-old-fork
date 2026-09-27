@@ -1,0 +1,193 @@
+export type MediaKind = 'image' | 'video' | 'html';
+
+export interface MediaItem {
+  kind: MediaKind;
+  url: string;
+  label: string;
+  source: HTMLElement;
+}
+
+const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|webp|avif|svg)(\?|#|$)/i;
+const VIDEO_EXTENSIONS = /\.(mp4|mov|webm|m4v)(\?|#|$)/i;
+const HTML_EXTENSIONS = /\.html?(\?|#|$)/i;
+const GITHUB_ATTACHMENT = /^https:\/\/(github\.com\/user-attachments\/assets\/|private-user-images\.githubusercontent\.com\/|user-images\.githubusercontent\.com\/)/i;
+
+function isHttps(url: string): boolean {
+  return url.startsWith('https://');
+}
+
+function linkKind(url: string): MediaKind | null {
+  if (!isHttps(url)) return null;
+  if (VIDEO_EXTENSIONS.test(url)) return 'video';
+  if (IMAGE_EXTENSIONS.test(url)) return 'image';
+  if (HTML_EXTENSIONS.test(url)) return 'html';
+  return null;
+}
+
+function labelFor(element: Element, fallback: string): string {
+  const text = element.getAttribute('alt') ?? element.getAttribute('title') ?? element.textContent ?? '';
+  return text.trim().slice(0, 120) || fallback;
+}
+
+export function collectMedia(root: HTMLElement): MediaItem[] {
+  const items: MediaItem[] = [];
+  const seen = new Set<string>();
+  const add = (item: MediaItem): void => {
+    if (seen.has(item.url)) return;
+    seen.add(item.url);
+    items.push(item);
+  };
+  root.querySelectorAll<HTMLElement>('img, video, a[href]').forEach((element) => {
+    if (element instanceof HTMLImageElement) {
+      if (element.closest('.avatar, .byline') != null || !isHttps(element.src) || element.classList.contains('emoji')) return;
+      const link = element.closest('a');
+      const linked = link?.href != null ? linkKind(link.href) : null;
+      if (linked === 'video' || linked === 'html') add({ kind: linked, url: link?.href ?? '', label: labelFor(element, 'Linked media'), source: element });
+      else add({ kind: 'image', url: element.currentSrc || element.src, label: labelFor(element, 'Image'), source: element });
+      return;
+    }
+    if (element instanceof HTMLVideoElement) {
+      const url = element.currentSrc || element.src || element.querySelector('source')?.src || '';
+      if (isHttps(url)) add({ kind: 'video', url, label: labelFor(element, 'Video'), source: element });
+      return;
+    }
+    if (element instanceof HTMLAnchorElement) {
+      if (element.querySelector('img') != null) return;
+      const kind = linkKind(element.href) ?? (GITHUB_ATTACHMENT.test(element.href) ? 'video' : null);
+      if (kind != null) add({ kind, url: element.href, label: labelFor(element, element.href.split('/').pop() ?? 'Link'), source: element });
+    }
+  });
+  return items;
+}
+
+export class Lightbox {
+  private readonly dialog: HTMLDialogElement;
+  private readonly stage: HTMLElement;
+  private readonly caption: HTMLElement;
+  private readonly counter: HTMLElement;
+  private items: MediaItem[] = [];
+  private index = 0;
+  private zoomed = false;
+
+  constructor(private readonly openExternal: (url: string) => void) {
+    this.dialog = document.createElement('dialog');
+    this.dialog.id = 'lightbox';
+    this.dialog.innerHTML = `
+      <div class="lb-top"><span class="lb-counter"></span><span class="lb-caption"></span>
+        <span class="lb-actions"><button class="lb-open" title="Open in browser  O">Open <kbd>O</kbd></button><button class="lb-close" title="Close  Esc">Close <kbd>esc</kbd></button></span></div>
+      <div class="lb-stage"></div>
+      <button class="lb-nav lb-prev" title="Previous  ←">‹</button><button class="lb-nav lb-next" title="Next  →">›</button>`;
+    document.body.append(this.dialog);
+    this.stage = this.dialog.querySelector('.lb-stage') as HTMLElement;
+    this.caption = this.dialog.querySelector('.lb-caption') as HTMLElement;
+    this.counter = this.dialog.querySelector('.lb-counter') as HTMLElement;
+    this.dialog.querySelector('.lb-close')?.addEventListener('click', () => this.close());
+    this.dialog.querySelector('.lb-open')?.addEventListener('click', () => this.openCurrent());
+    this.dialog.querySelector('.lb-prev')?.addEventListener('click', () => this.step(-1));
+    this.dialog.querySelector('.lb-next')?.addEventListener('click', () => this.step(1));
+    this.stage.addEventListener('click', (event) => {
+      if (event.target === this.stage) this.close();
+      else if (event.target instanceof HTMLImageElement) this.toggleZoom();
+    });
+    this.dialog.addEventListener('keydown', this.handleKey);
+    this.dialog.addEventListener('close', () => this.stage.replaceChildren());
+  }
+
+  get isOpen(): boolean {
+    return this.dialog.open;
+  }
+
+  open(items: MediaItem[], index = 0): boolean {
+    if (items.length === 0) return false;
+    this.items = items;
+    this.index = Math.max(0, Math.min(items.length - 1, index));
+    this.render();
+    if (!this.dialog.open) this.dialog.showModal();
+    return true;
+  }
+
+  close(): void {
+    this.dialog.close();
+  }
+
+  private step(delta: number): void {
+    if (this.items.length < 2) return;
+    this.index = (this.index + delta + this.items.length) % this.items.length;
+    this.render();
+  }
+
+  private openCurrent(): void {
+    const item = this.items[this.index];
+    if (item != null) this.openExternal(item.url);
+  }
+
+  private toggleZoom(): void {
+    this.zoomed = !this.zoomed;
+    this.stage.classList.toggle('zoomed', this.zoomed);
+  }
+
+  private render(): void {
+    const item = this.items[this.index];
+    if (item == null) return;
+    this.zoomed = false;
+    this.stage.classList.remove('zoomed');
+    this.counter.textContent = `${this.index + 1} / ${this.items.length}`;
+    this.caption.textContent = item.label;
+    this.dialog.classList.toggle('single', this.items.length < 2);
+    this.stage.replaceChildren(this.createView(item));
+    this.stage.scrollTop = 0;
+    item.source.scrollIntoView({ block: 'center', behavior: 'instant' });
+  }
+
+  private createView(item: MediaItem): HTMLElement {
+    switch (item.kind) {
+      case 'image': {
+        const image = document.createElement('img');
+        image.src = item.url;
+        image.alt = item.label;
+        image.draggable = false;
+        return image;
+      }
+      case 'video': {
+        const video = document.createElement('video');
+        video.src = item.url;
+        video.controls = true;
+        video.autoplay = true;
+        video.playsInline = true;
+        return video;
+      }
+      case 'html': {
+        const frame = document.createElement('iframe');
+        frame.src = item.url;
+        frame.setAttribute('sandbox', 'allow-scripts');
+        frame.setAttribute('referrerpolicy', 'no-referrer');
+        frame.title = item.label;
+        return frame;
+      }
+      default:
+        return item.kind satisfies never;
+    }
+  }
+
+  private readonly handleKey = (event: KeyboardEvent): void => {
+    const handlers: Record<string, () => void> = {
+      ArrowRight: () => this.step(1),
+      ArrowDown: () => this.step(1),
+      l: () => this.step(1),
+      j: () => this.step(1),
+      ArrowLeft: () => this.step(-1),
+      ArrowUp: () => this.step(-1),
+      h: () => this.step(-1),
+      k: () => this.step(-1),
+      o: () => this.openCurrent(),
+      z: () => this.toggleZoom(),
+      ' ': () => this.toggleZoom(),
+    };
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const handler = handlers[event.key];
+    if (handler == null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    handler();
+  };
+}

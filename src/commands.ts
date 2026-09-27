@@ -28,6 +28,7 @@ function parseChord(shortcut: string): Chord {
 
 function eventKey(event: KeyboardEvent): string {
   if (event.code.startsWith('Key')) return event.code.slice(3).toLowerCase();
+  if (event.key === 'Dead' && event.code === '') return '';
   if (event.code.startsWith('Digit')) return event.code.slice(5);
   if (event.code === 'Backslash') return '\\';
   if (event.code === 'Period') return '.';

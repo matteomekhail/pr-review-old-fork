@@ -12,7 +12,7 @@ A fast, keyboard-first macOS app for reviewing and merging GitHub pull requests.
 - **Diffs:** [`@pierre/diffs`](https://www.npmjs.com/package/@pierre/diffs), virtualized and syntax-highlighted in web workers. Collapsible files and sticky headers.
 - **Layouts:** stacked (description above diff) or side by side (`V`: description left, diff right). Panes resize and hide.
 - **Bulk actions:** select with `E` / `⇧J` / `⇧R`, then approve or merge in sequence with per-PR error reporting.
-- **Keyboard:** Linear-style single keys, VS Code chords, vim motions, and a `⌘K` command menu. `?` lists every shortcut.
+- **Keyboard:** Linear-style single keys, VS Code chords, vim motions, and a `/` command menu. `?` lists every shortcut.
 
 ## How it talks to GitHub
 
@@ -52,11 +52,11 @@ Vim motions work the same in every pane; the modifier picks the pane.
 | Motion | List `⌃` | Middle pane `⌥` | Right pane `⌘` |
 | --- | --- | --- | --- |
 | Half page down / up | `⌃D` / `⌃U` | `⌥D` / `⌥U` | `⌘D` / `⌘U` |
-| Page down / up | `⌃F` / `⌃B` | `⌥F` / `⌥B` | `⌘F` / `⌘B` |
+| Page down / up | `⌃F` / `⌃B` | `⌥F` / `⌥B` | — (use `⌘D` / `⌘U`) |
 | Line down / up | `⌃E` / `⌃Y` (or `⌃N` / `⌃P`) | `⌥E` / `⌥Y` (or `⌥J` / `⌥K`) | `⌘E` / `⌘Y` |
 | Top / bottom | `⌃G` / `⌃⇧G` | `⌥G` / `⌥⇧G` | `⌘G` / `⌘⇧G` |
 
-The middle pane is the diff in stacked mode and the description in side-by-side mode (`V`). The right pane is the file list in stacked mode and the diff in side-by-side mode.
+`⌘J` / `⌘K` always scroll the diff, whichever pane it's in. The middle pane is the diff in stacked mode and the description in side-by-side mode (`V`). The right pane is the file list in stacked mode and the diff in side-by-side mode.
 
 | Area | Keys |
 | --- | --- |
@@ -66,7 +66,7 @@ The middle pane is the diff in stacked mode and the description in side-by-side 
 | Select | `E` toggle · `⇧J`/`⇧K` extend · `⇧R` all ready · `⌘A` all · `Esc` clear |
 | Act | `A` approve · `⌘↵` merge · `⇧A` bulk approve · `⌘⇧↵` bulk merge |
 | Layout | `V` side by side · `⌘\` sidebar · `⌘⇧\` list · `⌘I` details · `⌘.` focus |
-| General | `⌘K` commands · `?` shortcuts · `/` filter · `R` refresh |
+| General | `/` commands · `?` shortcuts · `F` filter · `R` refresh |
 
 ## License
 

@@ -5,6 +5,7 @@ import { sanitizeHtml } from './sanitize';
 import { CommandRegistry, renderShortcut, type Command } from './commands';
 import { CommandPalette } from './palette';
 import { Layout } from './layout';
+import { Lightbox, collectMedia } from './lightbox';
 import { isReady, isRecent, isSmall, matchesSmartFilter, sortPulls, type SmartFilter, type SortOrder } from './smart';
 import { assessReadiness, isReadinessAvailable, type ReadinessResult } from './readiness';
 
@@ -309,13 +310,7 @@ function checksLabel(pull: PullRequest): { label: string; tone: string } {
   }
 }
 
-function property(label: string, value: string, className = ''): string {
-  return `<div class="stat-item ${className}"><span class="k">${label}</span><span class="v">${value}</span></div>`;
-}
 
-function tone({ label, tone: className }: { label: string; tone: string }): string {
-  return `<span class="tone ${className}"><i></i>${escapeHtml(label)}</span>`;
-}
 
 function descriptionHtml(bodyHtml: string): string {
   return bodyHtml.trim() === '' ? '<p class="muted">No description provided.</p>' : sanitizeHtml(bodyHtml);
@@ -333,25 +328,39 @@ function renderDescription(pull: PullRequest): HTMLElement {
   return wrapper;
 }
 
-function readinessProperty(pull: PullRequest): string {
+
+function chip(content: string, title: string, className = ''): string {
+  return `<span class="chip-meta ${className}" title="${escapeHtml(title)}">${content}</span>`;
+}
+
+function toneChip({ label, tone: toneName }: { label: string; tone: string }, title: string): string {
+  return chip(`<i class="dot-${toneName}"></i>${escapeHtml(label)}`, title, `tone-${toneName}`);
+}
+
+function readinessChip(pull: PullRequest): string {
   if (!isAiEnabled) return '';
   const result = aiResults.get(aiKey(pull));
-  if (result == null) return property('Readiness', `<span class="muted">${aiPending.has(aiKey(pull)) ? 'Assessing…' : '—'}</span>`);
+  if (result == null) return chip(aiPending.has(aiKey(pull)) ? '<span class="spinner"></span>Jev' : 'Jev —', 'Jev readiness');
   const percent = Math.round(Math.max(0, Math.min(1, result.score)) * 100);
   const toneName = percent >= 65 ? 'ok' : percent >= 40 ? 'wait' : 'bad';
-  return property('Readiness', `<span class="tone ${toneName}" title="evidence ${Math.round(result.evidence * 100)} · open concerns ${Math.round(result.blocker * 100)} · risk ${Math.round(result.risk * 100)} · scope ${Math.round(result.scope * 100)}"><i></i><b>${percent}%</b>&nbsp;${escapeHtml(result.reason)}</span>`, 'wide');
+  const detail = `Jev readiness ${percent}% · ${result.reason}\nevidence ${Math.round(result.evidence * 100)} · open concerns ${Math.round(result.blocker * 100)} · risk ${Math.round(result.risk * 100)} · scope ${Math.round(result.scope * 100)}`;
+  return chip(`<b>${percent}</b><span class="reason">${escapeHtml(result.reason)}</span>`, detail, `readiness tone-${toneName}`);
 }
 
 function renderDetailMeta(pull: PullRequest): void {
+  const checks = checksLabel(pull);
+  const review = reviewLabel(pull);
+  const merge = mergeState(pull);
   dom.statusBar.innerHTML = [
-    readinessProperty(pull),
-    property('Status', tone(mergeState(pull))),
-    property('Review', tone(reviewLabel(pull))),
-    property('Checks', tone(checksLabel(pull))),
-    property('Author', `${avatar(pull)}${escapeHtml(pull.author?.login ?? 'ghost')}`),
-    property('Branch', `<code title="${escapeHtml(pull.headRefName)}">${escapeHtml(pull.headRefName)}</code><span class="arrow">→</span><code>${escapeHtml(pull.baseRefName)}</code>`, 'wide'),
-    property('Changes', `<i class="add">+${pull.additions}</i>&nbsp;<i class="del">−${pull.deletions}</i>`),
-    property('Updated', `${relativeTime(pull.updatedAt)} ago`),
+    readinessChip(pull),
+    toneChip(merge, `Merge status: ${merge.label}`),
+    review.tone === 'muted' ? '' : toneChip(review, `Review: ${review.label}`),
+    checks.tone === 'muted' ? '' : toneChip(checks, `Checks: ${checks.label}`),
+    '<span class="meta-sep"></span>',
+    chip(`${avatar(pull)}${escapeHtml(pull.author?.login ?? 'ghost')}`, 'Author', 'plain'),
+    chip(`<code>${escapeHtml(pull.headRefName)}</code><span class="arrow">→</span><code>${escapeHtml(pull.baseRefName)}</code>`, `${pull.headRefName} → ${pull.baseRefName}`, 'plain branch'),
+    chip(`<i class="add">+${pull.additions}</i><i class="del">−${pull.deletions}</i>`, `${pull.changedFiles} files changed`, 'plain delta'),
+    chip(relativeTime(pull.updatedAt), `Updated ${relativeTime(pull.updatedAt)} ago`, 'plain muted-chip'),
   ].join('');
   dom.merge.disabled = pull.isDraft || pull.mergeable === 'CONFLICTING';
 }
@@ -493,6 +502,7 @@ const PANE_MODIFIER: Record<PaneTarget, string> = { list: '⌃', middle: '⌥', 
 const PANE_LABEL: Record<PaneTarget, string> = { list: 'list', middle: 'middle pane', right: 'right pane' };
 const MOTION_KEYS: Record<VimMotion, string> = { 'half-down': 'd', 'half-up': 'u', 'page-down': 'f', 'page-up': 'b', 'line-down': 'e', 'line-up': 'y', top: 'g', bottom: '⇧g' };
 const MOTION_TITLE: Record<VimMotion, string> = { 'half-down': 'Half page down', 'half-up': 'Half page up', 'page-down': 'Page down', 'page-up': 'Page up', 'line-down': 'Scroll down', 'line-up': 'Scroll up', top: 'Top', bottom: 'Bottom' };
+const SKIPPED_MOTIONS: Partial<Record<PaneTarget, VimMotion[]>> = { right: ['page-down', 'page-up'] };
 const EXTRA_MOTION_KEYS: Partial<Record<PaneTarget, Partial<Record<VimMotion, string[]>>>> = {
   list: { 'line-down': ['⌃n'], 'line-up': ['⌃p'] },
   middle: { 'line-down': ['⌥j'], 'line-up': ['⌥k'] },
@@ -527,7 +537,7 @@ function vimCommands(): Command[] {
   const panes: PaneTarget[] = ['list', 'middle', 'right'];
   const motions = Object.keys(MOTION_KEYS) as VimMotion[];
   return panes.flatMap((pane) =>
-    motions.map((motion): Command => ({
+    motions.filter((motion) => !(SKIPPED_MOTIONS[pane] ?? []).includes(motion)).map((motion): Command => ({
       id: `vim-${pane}-${motion}`,
       section: `Vim · ${PANE_LABEL[pane]} (${PANE_MODIFIER[pane]})`,
       title: `${MOTION_TITLE[motion]} in ${PANE_LABEL[pane]}`,
@@ -899,7 +909,7 @@ function toggleStyle(): void {
 }
 
 type ReviewMode = 'stacked' | 'side';
-let reviewMode: ReviewMode = localStorage.getItem('reviewMode') === 'side' ? 'side' : 'stacked';
+let reviewMode: ReviewMode = localStorage.getItem('reviewMode') === 'stacked' ? 'stacked' : 'side';
 
 function applyReviewMode(): void {
   const isSide = reviewMode === 'side';
@@ -918,6 +928,26 @@ function toggleReviewMode(): void {
 }
 
 const layout = new Layout(element('app'), () => syncPaneButtons());
+const lightbox = new Lightbox((url) => void openInBrowser(url).catch((error: unknown) => toast(errorMessage(error), true)));
+
+function descriptionRoot(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('#pr-body-split .description');
+}
+
+function openMedia(index = 0): void {
+  const root = descriptionRoot();
+  const items = root == null ? [] : collectMedia(root);
+  if (!lightbox.open(items, index)) toast('No images, videos or HTML previews in this description');
+}
+
+function openMediaFrom(target: HTMLElement): boolean {
+  const root = descriptionRoot();
+  if (root == null || !root.contains(target)) return false;
+  const items = collectMedia(root);
+  const index = items.findIndex((item) => item.source === target || item.source.contains(target) || target.contains(item.source));
+  if (index < 0) return false;
+  return lightbox.open(items, index);
+}
 const listPane = element('list-pane');
 new ResizeObserver(([entry]) => listPane.classList.toggle('narrow', (entry?.contentRect.width ?? 999) < 400)).observe(listPane);
 const commands = new CommandRegistry();
@@ -963,16 +993,21 @@ function openHelp(): void {
 
 const VIM_COMMANDS = vimCommands();
 
+const DIFF_SCROLL_COMMANDS: Command[] = [
+  { id: 'diff-scroll-down', section: 'Diff', title: 'Scroll diff down', aliases: 'vim line', keys: ['⌘j'], run: () => diffView.scrollBy(DIFF_LINE_PX * 2), isEnabled: hasPull },
+  { id: 'diff-scroll-up', section: 'Diff', title: 'Scroll diff up', aliases: 'vim line', keys: ['⌘k'], run: () => diffView.scrollBy(-DIFF_LINE_PX * 2), isEnabled: hasPull },
+];
+
 const COMMANDS: Command[] = [
-  { id: 'palette', section: 'General', title: 'Open command menu', keys: ['⌘k', '⌘⇧p'], run: () => palette.open() },
+  { id: 'palette', section: 'General', title: 'Open command menu', keys: ['/', '⌘⇧p'], run: () => palette.open() },
   { id: 'help', section: 'General', title: 'Keyboard shortcuts', keys: ['?', '⌘/'], run: openHelp },
-  { id: 'filter', section: 'General', title: 'Filter pull requests', keys: ['/'], run: () => dom.filter.focus() },
+  { id: 'filter', section: 'General', title: 'Filter pull requests', keys: ['f', '⌘f'], run: () => dom.filter.focus() },
   { id: 'refresh', section: 'General', title: 'Refresh', keys: ['r', '⌘r'], run: () => void refresh(state.kind, true) },
 
   { id: 'smart-all', section: 'Filter', title: 'Show all', aliases: 'clear filter', keys: ['⌥0'], run: () => setSmartFilter('all') },
-  { id: 'smart-ready', section: 'Filter', title: 'Show ready to merge', aliases: 'green approved mergeable', keys: ['⌥1', 'f r'], run: () => setSmartFilter('ready') },
-  { id: 'smart-small', section: 'Filter', title: 'Show small diffs', aliases: 'tiny quick', keys: ['⌥2', 'f s'], run: () => setSmartFilter('small') },
-  { id: 'smart-recent', section: 'Filter', title: 'Show recently updated', aliases: 'new fresh', keys: ['⌥3', 'f u'], run: () => setSmartFilter('recent') },
+  { id: 'smart-ready', section: 'Filter', title: 'Show ready to merge', aliases: 'green approved mergeable', keys: ['⌥1'], run: () => setSmartFilter('ready') },
+  { id: 'smart-small', section: 'Filter', title: 'Show small diffs', aliases: 'tiny quick', keys: ['⌥2'], run: () => setSmartFilter('small') },
+  { id: 'smart-recent', section: 'Filter', title: 'Show recently updated', aliases: 'new fresh', keys: ['⌥3'], run: () => setSmartFilter('recent') },
   { id: 'sort', section: 'Filter', title: 'Cycle sort (smart / updated / smallest)', aliases: 'order', keys: ['⇧s'], run: cycleSortOrder },
 
   { id: 'check', section: 'Select', title: 'Select / deselect pull request', aliases: 'check bulk multi', keys: ['e'], run: () => toggleCheckedCurrent(false), isEnabled: hasPull },
@@ -989,8 +1024,8 @@ const COMMANDS: Command[] = [
   { id: 'view-mine', section: 'Views', title: 'Go to Created by me', keys: ['⌘3', 'g m'], run: () => switchKind('mine') },
 
   { id: 'review-mode', section: 'Layout', title: 'Toggle side-by-side (description | diff)', aliases: 'split right panel diff sidebar stacked', keys: ['v', '⌘⇧d'], run: toggleReviewMode },
-  { id: 'toggle-sidebar', section: 'Layout', title: 'Toggle sidebar', aliases: 'hide show pane navigation', keys: ['⌘\\'], run: () => layout.toggle('sidebar') },
-  { id: 'toggle-list', section: 'Layout', title: 'Toggle pull request list', aliases: 'hide show pane queue inbox', keys: ['⌘⇧\\'], run: () => layout.toggle('list') },
+  { id: 'toggle-sidebar', section: 'Layout', title: 'Toggle sidebar', aliases: 'hide show pane navigation', keys: ['⌘b', '⌘\\'], run: () => layout.toggle('sidebar') },
+  { id: 'toggle-list', section: 'Layout', title: 'Toggle pull request list', aliases: 'hide show pane queue inbox', keys: ['⌘⇧b', '⌘⇧\\'], run: () => layout.toggle('list') },
   { id: 'toggle-inspector', section: 'Layout', title: 'Toggle details panel', aliases: 'inspector hide show pane properties files', keys: ['⌘i'], run: () => layout.toggle('inspector') },
   { id: 'focus-mode', section: 'Layout', title: 'Focus mode (hide all panels)', aliases: 'zen fullscreen hide panes', keys: ['⌘.', 'z'], run: () => layout.toggleFocus() },
   { id: 'reset-layout', section: 'Layout', title: 'Reset layout', aliases: 'panes widths default', keys: ['⌘⇧0'], run: () => layout.reset() },
@@ -1003,9 +1038,11 @@ const COMMANDS: Command[] = [
   { id: 'list-last', section: 'Navigate', title: 'Last pull request', aliases: 'vim bottom', keys: ['⇧g', 'End'], run: () => jumpPull('last') },
   { id: 'next-file', section: 'Navigate', title: 'Next file', keys: ['n', ']c', '⌥↓'], run: () => moveFile(1), isEnabled: hasFiles },
   { id: 'prev-file', section: 'Navigate', title: 'Previous file', keys: ['p', '[c', '⌥↑'], run: () => moveFile(-1), isEnabled: hasFiles },
+  { id: 'media', section: 'Navigate', title: 'Open first image / video / HTML preview', aliases: 'lightbox screenshot media picture gif recording', keys: ['i', '⌘⇧i'], run: () => openMedia(0), isEnabled: hasPull },
   { id: 'description', section: 'Navigate', title: 'Jump to description', keys: ['d', '⌘↑'], run: () => diffView.scrollToTop(), isEnabled: hasPull },
 
   ...VIM_COMMANDS,
+  ...DIFF_SCROLL_COMMANDS,
   { id: 'toggle-file', section: 'Diff', title: 'Collapse / expand file', aliases: 'fold unfold hide', keys: ['x', 'o'], run: toggleCurrentFile, isEnabled: hasFiles },
   { id: 'toggle-all', section: 'Diff', title: 'Collapse / expand all files', aliases: 'fold unfold hide', keys: ['⇧c'], run: toggleAllFiles, isEnabled: hasFiles },
   { id: 'diff-style', section: 'Diff', title: 'Toggle split / unified diff', aliases: 'side by side inline view', keys: ['s', '⌘⌥s'], run: toggleStyle },
@@ -1026,7 +1063,7 @@ let prefixTimer: number | undefined;
 
 commands.add(...COMMANDS.map((command) => ({ ...command, keys: command.keys.filter((shortcut) => !isSequenceShortcut(shortcut)) })));
 
-const SEQUENCE_PREFIXES = new Set(['g', 'f', '[', ']']);
+const SEQUENCE_PREFIXES = new Set(['g', '[', ']']);
 
 function handleSequence(event: KeyboardEvent): boolean {
   if (event.metaKey || event.ctrlKey || event.altKey) return false;
@@ -1050,7 +1087,7 @@ function handleSequence(event: KeyboardEvent): boolean {
 }
 
 document.addEventListener('keydown', (event) => {
-  if (event.isComposing || palette.isOpen || dom.confirm.open || dom.help.open || dom.bulkConfirm.open) return;
+  if ((event.isComposing && !event.altKey) || lightbox.isOpen || palette.isOpen || dom.confirm.open || dom.help.open || dom.bulkConfirm.open) return;
   const target = event.target;
   const isTyping = target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement;
   if (isTyping && (event.key === 'Escape' || (event.key === 'Enter' && !event.metaKey))) {
@@ -1082,7 +1119,13 @@ dom.files.addEventListener('click', (event) => {
 });
 
 document.getElementById('pr-body-split')?.addEventListener('click', (event) => {
-  const link = (event.target as HTMLElement).closest?.('.description a');
+  const target = event.target as HTMLElement;
+  const media = target.closest?.('.description img, .description video, .description a');
+  if (media instanceof HTMLElement && openMediaFrom(media instanceof HTMLAnchorElement ? (media.querySelector('img') ?? media) : media)) {
+    event.preventDefault();
+    return;
+  }
+  const link = target.closest?.('.description a');
   if (!(link instanceof HTMLAnchorElement)) return;
   event.preventDefault();
   if (link.href.startsWith('https://github.com/')) void openInBrowser(link.href);
