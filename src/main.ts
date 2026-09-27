@@ -1180,6 +1180,51 @@ function cycleMergeMethod(): void {
   toast(`Merge method: ${MERGE_LABELS[next]}`);
 }
 
+type BrokenReason = 'conflicts' | 'failing checks';
+
+function brokenReasons(pull: PullRequest): BrokenReason[] {
+  const reasons: BrokenReason[] = [];
+  if (pull.mergeable === 'CONFLICTING' || pull.mergeStateStatus === 'DIRTY') reasons.push('conflicts');
+  if (pull.checkState === 'FAILURE' || pull.checkState === 'ERROR') reasons.push('failing checks');
+  return reasons;
+}
+
+function buildFixPrompt(pulls: PullRequest[]): string {
+  const lines = pulls.map((pull) => {
+    const reasons = brokenReasons(pull).join(' + ');
+    return `- ${pull.url}\n  repo: ${pull.repository.nameWithOwner} · branch: ${pull.headRefName} → ${pull.baseRefName} · problem: ${reasons}\n  title: ${pull.title}`;
+  });
+  return [
+    `Fix these ${pulls.length} open pull request${pulls.length === 1 ? '' : 's'} so each one is green and mergeable again.`,
+    '',
+    ...lines,
+    '',
+    'For each pull request:',
+    '1. Check out its head branch (`gh pr checkout <url>`), and pull the latest base branch.',
+    '2. Merge conflicts: merge or rebase onto the base branch as the repo prefers, resolve every conflict keeping the intent of both sides, and make sure it builds.',
+    '3. Failing checks: run `gh pr checks <url>`, open the failing job logs (`gh run view <run-id> --log-failed`), find the root cause, and fix it in the code. Do not skip, disable or loosen tests or lint rules to get green.',
+    '4. Run the relevant tests, typecheck and lint locally before pushing.',
+    '5. Push to the same branch without force-pushing unless a rebase requires it, then re-check `gh pr checks <url>` until it passes.',
+    '',
+    'Work through them one at a time. When done, report each PR with what was wrong, what you changed, and its final check status. If one cannot be fixed without a product decision, stop on that PR and explain why instead of guessing.',
+  ].join('\n');
+}
+
+function copyFixPrompt(): void {
+  const scope = state.checkedIds.size > 0 ? checkedPulls() : state.pulls;
+  const broken = scope.filter((pull) => brokenReasons(pull).length > 0);
+  if (broken.length === 0) {
+    toast(state.checkedIds.size > 0 ? 'No conflicts or failing checks in the selection' : 'No PRs with conflicts or failing checks');
+    return;
+  }
+  const conflicts = broken.filter((pull) => brokenReasons(pull).includes('conflicts')).length;
+  const failing = broken.filter((pull) => brokenReasons(pull).includes('failing checks')).length;
+  void navigator.clipboard.writeText(buildFixPrompt(broken)).then(
+    () => toast(`Copied fix prompt for ${broken.length} PR${broken.length === 1 ? '' : 's'} · ${conflicts} conflicted · ${failing} failing`),
+    () => toast('Clipboard unavailable', true),
+  );
+}
+
 function openSelectedOnGitHub(): void {
   const pull = selectedPull();
   if (pull == null) return;
@@ -1302,6 +1347,7 @@ const COMMANDS: Command[] = [
   { id: 'approve', section: 'Pull request', title: 'Approve', aliases: 'lgtm review accept', keys: ['a'], run: () => void approveSelected(), isEnabled: hasPull },
   { id: 'merge', section: 'Pull request', title: 'Merge (all selected when several are checked)', aliases: 'squash ship land queue', keys: ['⌘↵', 'm'], run: () => void (state.checkedIds.size > 1 ? bulkMerge() : mergeSelected()), isEnabled: hasPull },
   { id: 'merge-method', section: 'Pull request', title: 'Cycle merge method', keys: ['⇧m'], run: cycleMergeMethod },
+  { id: 'fix-prompt', section: 'Pull request', title: 'Copy agent prompt to fix conflicts and failing checks', aliases: 'broken red failing ci conflict agent devin claude codex prompt clipboard', keys: ['⇧x'], run: copyFixPrompt },
   { id: 'open', section: 'Pull request', title: 'Open on GitHub', aliases: 'browser link url web', keys: ['o', '⌘o', 'g o'], run: openSelectedOnGitHub, isEnabled: hasPull },
   { id: 'copy-url', section: 'Pull request', title: 'Copy link', keys: ['⌘⇧c', 'y'], run: () => { const pull = selectedPull(); if (pull != null) copyText(pull.url, 'link'); }, isEnabled: hasPull },
   { id: 'copy-branch', section: 'Pull request', title: 'Copy branch name', keys: ['⌘⇧.', 'b'], run: () => { const pull = selectedPull(); if (pull != null) copyText(pull.headRefName, 'branch'); }, isEnabled: hasPull },
