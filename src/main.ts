@@ -298,7 +298,7 @@ function computeLists(): void {
   listCacheKey = key;
   const needle = state.filter.trim().toLowerCase();
   const now = Date.now();
-  const matching = state.pulls.filter((pull) => (state.smartFilter === 'attention' ? needsAttention(pull) : state.smartFilter === 'tested' ? isTested(pull) : matchesSmartFilter(pull, state.smartFilter, now)) && matchesText(pull, needle));
+  const matching = state.pulls.filter((pull) => (state.smartFilter === 'attention' ? isMergeStateSettled(pull) && needsAttention(pull) : state.smartFilter === 'tested' ? isTested(pull) : matchesSmartFilter(pull, state.smartFilter, now)) && matchesText(pull, needle));
   filteredCache = sortPulls(matching, state.sortOrder, now, aiScoreFor);
   visibleCache = !isGrouped || groups.length === 0 ? filteredCache : listSections(filteredCache).flatMap((section) => (section.group != null && collapsedGroups.has(section.group.id) ? [] : section.pulls));
 }
@@ -326,7 +326,7 @@ function renderSmartCounts(): void {
     ready: state.pulls.filter(isReady).length,
     small: state.pulls.filter(isSmall).length,
     recent: state.pulls.filter((pull) => isRecent(pull, now)).length,
-    attention: state.pulls.filter(needsAttention).length,
+    attention: state.pulls.filter((pull) => isMergeStateSettled(pull) && needsAttention(pull)).length,
     tested: state.pulls.filter(isTested).length,
   };
   dom.filterBar.querySelectorAll<HTMLElement>('[data-smart-count]').forEach((badge) => (badge.textContent = String(counts[badge.dataset.smartCount as SmartFilter])));
@@ -560,6 +560,15 @@ function renderList(): void {
 
 let pendingAutoSelect = 0;
 
+function isAwaitingMergeStates(): boolean {
+  if (state.smartFilter !== 'ready' && state.smartFilter !== 'attention') return false;
+  return state.pulls.some((pull) => pull.mergeStateStatus === 'UNKNOWN' && !pull.isDraft);
+}
+
+function isMergeStateSettled(pull: PullRequest): boolean {
+  return pull.isDraft || pull.mergeStateStatus !== 'UNKNOWN';
+}
+
 function syncDetailVisibility(pulls: PullRequest[]): void {
   const hasSelection = selectedPull() != null;
   if (state.pulls.length > 0) document.getElementById('list-skeleton')?.remove();
@@ -578,6 +587,12 @@ function syncDetailVisibility(pulls: PullRequest[]): void {
     return;
   }
   if (!lastFetchedAt.has(state.kind) && state.pulls.length === 0) return;
+  if (pulls.length === 0 && state.pulls.length > 0 && isAwaitingMergeStates()) {
+    dom.pr.hidden = true;
+    dom.empty.hidden = false;
+    if (!dom.empty.classList.contains('is-loading')) dom.empty.innerHTML = '<div class="empty-pending"><span class="spinner"></span>Checking merge status…</div>';
+    return;
+  }
   clearBootSkeletons();
   dom.pr.hidden = true;
   dom.empty.hidden = false;
@@ -1172,6 +1187,10 @@ function applyMergeStates(kind: QueueKind, states: MergeState[]): void {
   cancelAnimationFrame(mergeStateRenderFrame);
   mergeStateRenderFrame = requestAnimationFrame(() => {
     renderList();
+    if (selectedPull() == null) {
+      const first = visiblePulls()[0];
+      if (first != null) void select(first);
+    }
     const pull = selectedPull();
     if (pull != null) renderDetailMeta(pull);
   });

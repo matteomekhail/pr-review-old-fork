@@ -836,3 +836,4 @@ kbd[data-glyph='right'] { --kbd-glyph: url("data:image/svg+xml,%3Csvg%20xmlns%3D
 .caret .ico { width: 13px; height: 13px; stroke-width: 2.25; }
 #pr-list li.group-row .caret { width: 14px; }
 .devin-logo { width: 15px; height: 15px; }
+.empty-pending { display: inline-flex; align-items: center; gap: 8px; color: var(--text-3); font-size: 12.5px; animation: fade-in .2s var(--ease-out); }
