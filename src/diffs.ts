@@ -70,6 +70,7 @@ export class DiffView {
   private header: HTMLElement | undefined;
   private isFlush = false;
   private themeType: 'dark' | 'light' = 'dark';
+  private themeNames: Record<'dark' | 'light', string> = { dark: 'pierre-dark', light: 'pierre-light' };
   private diffStyle: DiffStyle;
   private collapsed = new Set<string>();
   private ids: string[] = [];
@@ -103,9 +104,11 @@ export class DiffView {
     return this.collapsed.size;
   }
 
-  setThemeType(themeType: 'dark' | 'light'): void {
-    if (this.themeType === themeType) return;
+  setTheme(themeType: 'dark' | 'light', themeName: string): void {
+    if (this.themeType === themeType && this.themeNames[themeType] === themeName) return;
     this.themeType = themeType;
+    this.themeNames = { ...this.themeNames, [themeType]: themeName };
+    void workerPool.setRenderOptions({ theme: this.themeNames });
     this.view.setOptions(this.options());
   }
 
@@ -159,7 +162,7 @@ export class DiffView {
   private options(): ViewOptions {
     const header = this.header;
     return {
-      theme: { dark: 'pierre-dark', light: 'pierre-light' },
+      theme: this.themeNames,
       themeType: this.themeType,
       diffStyle: this.diffStyle,
       diffIndicators: 'bars',

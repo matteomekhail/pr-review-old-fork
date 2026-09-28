@@ -29,6 +29,7 @@
             <h2 id="view-title" data-tauri-drag-region>Created by me</h2>
             <button id="refresh-button" class="icon-button refresh-button" title="Refresh  ⌘R"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M13.5 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             <span id="refresh-status" class="refresh-status"></span>
+            <button id="theme-button" class="icon-button theme-button" title="Theme  T"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor"/></svg><kbd class="icon-kbd">T</kbd></button>
           </div>
           <div class="search"><span>⌕</span><input id="filter" title="Filter pull requests  F" placeholder="Filter" spellcheck="false" autocomplete="off" /><kbd>F</kbd></div>
         </header>
@@ -40,7 +41,7 @@
           <button data-smart="tested" class="chip" title="E2E tested: body or comments show the change was actually run end to end (AI, needs OPENROUTER_API_KEY)  ⌥5"><i class="dot ok"></i>Tested <span class="chip-count" data-smart-count="tested"></span></button>
           <button data-smart="attention" class="chip chip-attention" title="Needs attention: conflicts, failing, blocked or not approved  ⌥4"><i class="dot bad"></i>Attention <span class="chip-count" data-smart-count="attention"></span></button>
           <button id="open-triage" class="chip chip-agent" title="Send PRs that need attention to an agent  ⇧X"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M8 1.5l1.6 3.9 3.9 1.6-3.9 1.6L8 12.5 6.4 8.6 2.5 7l3.9-1.6z" fill="currentColor"/></svg>Fix with agent <kbd>⇧</kbd><kbd>X</kbd></button>
-          <button id="toggle-grouping" class="chip" title="Group related work  T"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="1.5" y="2" width="13" height="3" rx="1" fill="none" stroke="currentColor"/><rect x="3.5" y="7" width="11" height="2.5" rx="1" fill="none" stroke="currentColor"/><rect x="3.5" y="11.5" width="11" height="2.5" rx="1" fill="none" stroke="currentColor"/></svg>Group</button>
+          <button id="toggle-grouping" class="chip" title="Group related work  ⇧T"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="1.5" y="2" width="13" height="3" rx="1" fill="none" stroke="currentColor"/><rect x="3.5" y="7" width="11" height="2.5" rx="1" fill="none" stroke="currentColor"/><rect x="3.5" y="11.5" width="11" height="2.5" rx="1" fill="none" stroke="currentColor"/></svg>Group</button>
           <span id="ai-status" class="ai-status off" title="Smart sort uses built-in rules">Rules</span>
           <select id="sort" class="sort" title="Sort order  ⇧S">
             <option value="smart">Smart</option>

@@ -1,3 +1,5 @@
+import { applyThemeColors, SYSTEM_THEME_ID, THEMES, themeById, type AppTheme } from './themes';
+import { ThemePicker } from './theme-picker';
 import './styles.css';
 import { approvePull, usesMergeQueue, fetchBody, fetchDiff, fetchMergeStates, fetchQueue, type MergeState, mergePull, openInBrowser, type MergeMethod, type PullRequest, type QueueKind } from './github';
 import { DiffView, parseDiff, type DiffStyle, type ParsedFile } from './diffs';
@@ -1670,26 +1672,36 @@ function copyText(text: string, label: string): void {
   );
 }
 
-type Theme = 'dark' | 'light' | 'system';
-let theme: Theme = (localStorage.getItem('theme') as Theme | null) ?? 'system';
+let themeId = localStorage.getItem('themeId') ?? (localStorage.getItem('theme') === 'dark' || localStorage.getItem('theme') === 'light' ? (localStorage.getItem('theme') as string) : SYSTEM_THEME_ID);
 const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
 
-function resolvedTheme(): 'dark' | 'light' {
-  return theme === 'system' ? (systemDark.matches ? 'dark' : 'light') : theme;
+function resolvedAppTheme(id: string = themeId): AppTheme {
+  const fallback = themeById(systemDark.matches ? 'dark' : 'light') ?? THEMES[0]!;
+  return id === SYSTEM_THEME_ID ? fallback : themeById(id) ?? fallback;
 }
 
-function applyTheme(): void {
-  const resolved = resolvedTheme();
-  document.documentElement.dataset.theme = resolved;
-  diffView.setThemeType(resolved);
+function applyTheme(id: string = themeId): void {
+  const theme = resolvedAppTheme(id);
+  applyThemeColors(document.documentElement, theme);
+  diffView.setTheme(theme.mode, theme.diff);
 }
 
-function cycleTheme(): void {
-  const order: Theme[] = ['system', 'dark', 'light'];
-  theme = order[(order.indexOf(theme) + 1) % order.length] ?? 'system';
-  localStorage.setItem('theme', theme);
+function setTheme(id: string): void {
+  themeId = id;
+  localStorage.setItem('themeId', id);
   applyTheme();
-  toast(`Theme: ${theme === 'system' ? `system (${resolvedTheme()})` : theme}`);
+  toast(`Theme: ${id === SYSTEM_THEME_ID ? `System (${resolvedAppTheme().name})` : resolvedAppTheme().name}`);
+}
+
+const themePicker = new ThemePicker({
+  current: () => themeId,
+  preview: (id) => applyTheme(id),
+  commit: setTheme,
+  cancel: () => applyTheme(),
+});
+
+function openThemePicker(): void {
+  themePicker.open();
 }
 
 function syncPaneButtons(): void {
@@ -1731,7 +1743,7 @@ const COMMANDS: Command[] = [
   { id: 'smart-recent', section: 'Filter', title: 'Show recently updated', aliases: 'new fresh', keys: ['⌥3'], run: () => setSmartFilter('recent') },
   { id: 'smart-tested', section: 'Filter', title: 'Show end-to-end tested', aliases: 'e2e verified qa proof screenshots recording', keys: ['⌥5'], run: () => setSmartFilter('tested') },
   { id: 'smart-attention', section: 'Filter', title: 'Show PRs that need attention', aliases: 'unapproved conflicts failing blocked red yellow triage', keys: ['⌥4'], run: () => setSmartFilter('attention') },
-  { id: 'group', section: 'Filter', title: 'Group related work', aliases: 'cluster effort category batch smart group', keys: ['t'], run: toggleGrouping },
+  { id: 'group', section: 'Filter', title: 'Group related work', aliases: 'cluster effort category batch smart group', keys: ['⇧t'], run: toggleGrouping },
   { id: 'regroup', section: 'Filter', title: 'Regroup', aliases: 'refresh groups cluster', keys: [], run: () => { groupsSignature = ''; localStorage.removeItem(GROUPS_CACHE_KEY); void ensureGroups(true); } },
   { id: 'sort', section: 'Filter', title: 'Cycle sort (smart / updated / smallest)', aliases: 'order', keys: ['⇧s'], run: cycleSortOrder },
 
@@ -1754,7 +1766,7 @@ const COMMANDS: Command[] = [
   { id: 'toggle-list', section: 'Layout', title: 'Toggle pull request list', aliases: 'hide show pane queue inbox', keys: ['⌘⇧b', '⌘⇧\\'], run: () => layout.toggle('list') },
   { id: 'toggle-inspector', section: 'Layout', title: 'Toggle details panel', aliases: 'inspector hide show pane properties files', keys: ['⌘i'], run: () => layout.toggle('inspector') },
   { id: 'focus-mode', section: 'Layout', title: 'Focus mode (hide all panels)', aliases: 'zen fullscreen hide panes', keys: ['⌘.', 'z'], run: () => layout.toggleFocus() },
-  { id: 'theme', section: 'Layout', title: 'Cycle theme (system / dark / light)', aliases: 'light dark mode appearance color', keys: ['⌘⇧l'], run: cycleTheme },
+  { id: 'theme', section: 'Layout', title: 'Choose theme', aliases: 'light dark mode appearance color catppuccin dracula tokyo night nord gruvbox github solarized monokai rose pine one dark', keys: ['t', '⌘⇧l'], run: openThemePicker },
   { id: 'reset-layout', section: 'Layout', title: 'Reset layout', aliases: 'panes widths default', keys: ['⌘⇧0'], run: () => layout.reset() },
 
   { id: 'next-pr', section: 'Navigate', title: 'Next pull request', keys: ['j', '↓'], run: () => movePull(1) },
@@ -1817,7 +1829,7 @@ function handleSequence(event: KeyboardEvent): boolean {
 }
 
 document.addEventListener('keydown', (event) => {
-  if ((event.isComposing && !event.altKey) || lightbox.isOpen || palette.isOpen || dom.confirm.open || dom.help.open || dom.bulkConfirm.open || dom.triage.open) return;
+  if ((event.isComposing && !event.altKey) || lightbox.isOpen || palette.isOpen || dom.confirm.open || dom.help.open || dom.bulkConfirm.open || dom.triage.open || themePicker.isOpen) return;
   const target = event.target;
   const isTyping = target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable);
   if (isTyping && (event.key === 'Escape' || (event.key === 'Enter' && !event.metaKey))) {
@@ -1894,6 +1906,7 @@ element('open-help').addEventListener('click', openHelp);
 element('open-github').addEventListener('click', openSelectedOnGitHub);
 element('refresh-button').addEventListener('click', manualRefresh);
 element('open-triage').addEventListener('click', openTriage);
+element('theme-button').addEventListener('click', openThemePicker);
 refreshTicker = window.setInterval(renderRefreshStatus, 5_000);
 void refreshTicker;
 dom.crumbs.addEventListener('click', (event) => {
@@ -1908,7 +1921,7 @@ applyTheme();
 applyFilesCollapsed();
 enableTooltips();
 routeLinksToBrowser(openInBrowser, (message) => toast(message, true));
-systemDark.addEventListener('change', () => theme === 'system' && applyTheme());
+systemDark.addEventListener('change', () => themeId === SYSTEM_THEME_ID && applyTheme());
 document.querySelector('.file-tree .section-title')?.addEventListener('click', toggleFilesSection);
 dom.filterBar.addEventListener('click', (event) => {
   const chip = (event.target as HTMLElement).closest<HTMLElement>('[data-smart]');

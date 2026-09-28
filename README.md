@@ -15,7 +15,7 @@ A fast, keyboard-first macOS app for reviewing and merging GitHub pull requests.
 - **Smart groups (Jev):** `T` groups related PRs into efforts, such as a run of lib extractions or UI refactors. Groups are ordered by average readiness and each can be collapsed or selected as a whole for bulk merge.
 - **Conversation:** PR comments and reviews appear under the description, humans and bots alike (Devin, Perry, GitHub Actions…), with review verdicts highlighted. `⇧B` hides bot comments.
 - **Merge queue:** PRs already in a queue show a yellow marker with their position, and queued merges skip the confirmation.
-- **Themes:** light, dark, or follow the system.
+- **Themes:** press `T` for a live-preview picker with 20 IDE themes (Catppuccin Mocha/Macchiato/Frappé/Latte, Tokyo Night, Dracula, One Dark Pro, GitHub Dark/Light, Nord, Gruvbox, Rosé Pine, Solarized, Monokai, Night Owl, Kanagawa, Vesper) or follow macOS. Syntax highlighting in diffs uses the matching editor theme.
 - **Bulk actions:** select with `E` / `⇧J` / `⇧R`, then approve or merge in sequence with per-PR error reporting.
 - **Keyboard:** Linear-style single keys, VS Code chords, vim motions, and a `/` command menu. `?` lists every shortcut.
 
@@ -77,10 +77,10 @@ Vim motions work the same in every pane; the modifier picks the pane.
 | --- | --- |
 | Queue | `J`/`K` next/prev · `gg`/`G` first/last · `Space`/`⇧Space` page the middle pane |
 | Files | `N`/`P` or `]c`/`[c` next/prev file · `X` collapse · `⇧C` collapse all · `⇧F` hide file list · `S` split/unified |
-| Filters | `T` group related work · `⌥1` Ready · `⌥2` Small · `⌥3` Recent · `⌥0` All · `⇧S` sort |
+| Filters | `⇧T` group related work · `⌥1` Ready · `⌥2` Small · `⌥3` Recent · `⌥4` Attention · `⌥5` Tested · `⌥0` All · `⇧S` sort · `⇧X` fix with agent |
 | Select | `⇧V` visual mode (then `J`/`K`) · `E` toggle · `⇧J`/`⇧K` extend · `⇧R` all ready · `⌘A` all · `Esc` clear |
 | Act | `⇧X` copy an agent prompt to fix every PR with conflicts or failing checks (or just the selected ones) · `O` open on GitHub (in Chrome) · `A` approve · `⌘↵` merge (all selected when several are checked) · `⇧A` bulk approve · `⌘⇧↵` bulk merge |
-| Layout | `⌘⇧L` theme (system/dark/light) · `V` side by side · `⌘\` sidebar · `⌘⇧\` list · `⌘I` details · `⌘.` focus |
+| Layout | `T` theme picker · `V` side by side · `⌘\` sidebar · `⌘⇧\` list · `⌘I` details · `⌘.` focus |
 | Lightbox | `I` open first media · `H`/`L` or `J`/`K` or `←`/`→` cycle · `gg`/`G` first/last · `⌃D`/`⌃U` skip half · `Z` zoom · `O` open · `Q`/`Esc` close |
 | General | `/` commands · `?` shortcuts · `F` filter · `R` refresh |
 
