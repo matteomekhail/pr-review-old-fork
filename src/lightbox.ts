@@ -73,9 +73,9 @@ export class Lightbox {
     this.dialog = document.createElement('dialog');
     this.dialog.id = 'lightbox';
     this.dialog.innerHTML = `
-      <div class="lb-top"><span class="lb-counter"></span><span class="lb-caption"></span>
-        <span class="lb-actions"><button class="lb-open" title="Open in browser  O">Open <kbd>O</kbd></button><button class="lb-close" title="Close  esc / Q">Close <kbd>esc</kbd></button></span></div>
+      <div class="lb-top"><span class="lb-actions"><button class="lb-open" title="Open in browser  O">Open <kbd>O</kbd></button><button class="lb-close" title="Close  esc / Q">Close <kbd>esc</kbd></button></span></div>
       <div class="lb-stage"></div>
+      <div class="lb-footer"><span class="lb-counter"></span><span class="lb-caption"></span></div>
       <button class="lb-nav lb-prev" title="Previous  ← / H">‹</button><button class="lb-nav lb-next" title="Next  → / L">›</button>`;
     document.body.append(this.dialog);
     this.stage = this.dialog.querySelector('.lb-stage') as HTMLElement;

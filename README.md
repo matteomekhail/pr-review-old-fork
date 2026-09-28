@@ -13,6 +13,7 @@ A fast, keyboard-first macOS app for reviewing and merging GitHub pull requests.
 - **Layouts:** stacked (description above diff) or side by side (`V`: description left, diff right). Panes resize and hide.
 - **Smart search (Jev):** typing a topic like `frontend` or `billing` also finds PRs that don't contain the word, tagged **Jev** in the list. Literal matches still appear instantly.
 - **Smart groups (Jev):** `T` groups related PRs into efforts, such as a run of lib extractions or UI refactors. Groups are ordered by average readiness and each can be collapsed or selected as a whole for bulk merge.
+- **Conversation:** PR comments and reviews appear under the description, humans and bots alike (Devin, Perry, GitHub Actions…), with review verdicts highlighted. `⇧B` hides bot comments.
 - **Merge queue:** PRs already in a queue show a yellow marker with their position, and queued merges skip the confirmation.
 - **Themes:** light, dark, or follow the system.
 - **Bulk actions:** select with `E` / `⇧J` / `⇧R`, then approve or merge in sequence with per-PR error reporting.

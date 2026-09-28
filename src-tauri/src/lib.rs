@@ -124,6 +124,21 @@ async fn merge_states(ids: Vec<String>) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn conversation(repo: String, number: u64) -> Result<String, String> {
+    validate_repo(&repo)?;
+    let (owner, name) = repo.split_once('/').ok_or("invalid repository")?;
+    let query = "query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { comments(last: 50) { totalCount nodes { id bodyHTML createdAt url author { login avatarUrl __typename } } } reviews(last: 30) { totalCount nodes { id state bodyHTML submittedAt url author { login avatarUrl __typename } comments { totalCount } } } } } }";
+    gh(&[
+        "api", "graphql",
+        "-f", &format!("query={query}"),
+        "-F", &format!("owner={owner}"),
+        "-F", &format!("name={name}"),
+        "-F", &format!("number={number}"),
+    ])
+    .await
+}
+
+#[tauri::command]
 async fn body(repo: String, number: u64) -> Result<String, String> {
     validate_repo(&repo)?;
     let (owner, name) = repo.split_once('/').ok_or("invalid repository")?;
@@ -330,7 +345,7 @@ async fn open_in_browser(url: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![queue, merge_queue, merge_states, body, diff, approve, merge, open_in_browser, review_context, readiness_available, readiness])
+        .invoke_handler(tauri::generate_handler![queue, merge_queue, merge_states, conversation, body, diff, approve, merge, open_in_browser, review_context, readiness_available, readiness])
         .run(tauri::generate_context!())
         .expect("error while running PR Review");
 }

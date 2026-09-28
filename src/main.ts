@@ -13,6 +13,7 @@ import { imageUrlsInHtml, preloadImages } from './image-cache';
 import { routeLinksToBrowser } from './external-links';
 import { isSemanticMatch, semanticMatches } from './semantic-search';
 import { VirtualList, type VirtualRow } from './virtual-list';
+import { loadConversation, type ConversationItem } from './conversation';
 import { isReady, isRecent, isSmall, matchesSmartFilter, sortPulls, type SmartFilter, type SortOrder } from './smart';
 import { assessReadiness, isReadinessAvailable, type ReadinessResult } from './readiness';
 
@@ -625,6 +626,43 @@ function skeletonLine(width: string, extra = ''): string {
   return `<span class="sk-line ${extra}" style="width:${width}"></span>`;
 }
 
+function conversationSkeleton(): string {
+  return `<div class="skeleton">${[0, 1].map(() => `<div class="sk-comment"><span class="sk-avatar"></span><div class="sk-comment-body">${skeletonLine('28%')}${skeletonLine('92%')}${skeletonLine('70%')}</div></div>`).join('')}</div>`;
+}
+
+const REVIEW_LABELS: Record<string, { label: string; tone: string }> = {
+  APPROVED: { label: 'approved', tone: 'ok' },
+  CHANGES_REQUESTED: { label: 'requested changes', tone: 'bad' },
+  COMMENTED: { label: 'reviewed', tone: 'muted' },
+  DISMISSED: { label: 'review dismissed', tone: 'muted' },
+};
+
+let showBotComments = localStorage.getItem('showBotComments') !== '0';
+
+function conversationItemHtml(item: ConversationItem): string {
+  const review = item.reviewState == null ? null : REVIEW_LABELS[item.reviewState] ?? { label: item.reviewState.toLowerCase(), tone: 'muted' };
+  const avatarHtml = item.avatarUrl == null ? '<span class="avatar"></span>' : `<img class="avatar" src="${escapeHtml(item.avatarUrl)}&s=48" alt="" loading="lazy" />`;
+  const action = review == null ? 'commented' : `<span class="review-state tone-${review.tone}">${review.label}</span>`;
+  const inline = item.inlineCount > 0 ? `<span class="muted">· ${item.inlineCount} inline comment${item.inlineCount === 1 ? '' : 's'}</span>` : '';
+  const body = item.html.trim() === '' ? '' : `<div class="markdown comment-body">${sanitizeHtml(item.html)}</div>`;
+  return `<article class="comment${item.isBot ? ' is-bot' : ''}${review != null ? ` review tone-${review.tone}` : ''}">
+    <header>${avatarHtml}<b>${escapeHtml(item.author)}</b>${item.isBot ? '<span class="bot-tag">bot</span>' : ''}${action}${inline}<a class="comment-time" href="${escapeHtml(item.url)}" title="Open on GitHub">${relativeTime(item.at)} ago</a></header>
+    ${body}
+  </article>`;
+}
+
+function renderConversation(container: Element, items: ConversationItem[]): void {
+  const visible = showBotComments ? items : items.filter((item) => !item.isBot);
+  const botCount = items.filter((item) => item.isBot).length;
+  const count = container.querySelector('.conversation-count');
+  if (count != null) count.innerHTML = `${items.length} · <button class="link-button" data-toggle-bots>${showBotComments ? 'Hide' : 'Show'} ${botCount} bot${botCount === 1 ? '' : 's'}</button>`;
+  const list = container.querySelector('.conversation-list');
+  if (list == null) return;
+  list.innerHTML = visible.length === 0 ? `<p class="muted">${items.length === 0 ? 'No comments yet.' : 'Only bot comments · hidden.'}</p>` : visible.map(conversationItemHtml).join('');
+  list.classList.add('fade-in');
+  preloadImages(imageUrlsInHtml(visible.map((item) => item.html).join('')));
+}
+
 function descriptionSkeleton(): string {
   return `<div class="skeleton" aria-label="Loading description" aria-busy="true">
     ${skeletonLine('22%', 'sk-heading')}
@@ -676,6 +714,7 @@ function renderDescription(pull: PullRequest): HTMLElement {
     <h1>${escapeHtml(pull.title)}</h1>
     <div class="byline">${avatar(pull)}<b>${escapeHtml(pull.author?.login ?? 'ghost')}</b> opened ${relativeTime(pull.createdAt)} ago · <code>${escapeHtml(pull.headRefName)}</code> → <code>${escapeHtml(pull.baseRefName)}</code></div>
     <div class="markdown">${body}</div>
+    <section class="conversation" data-conversation><div class="conversation-head"><span>Conversation</span><span class="muted conversation-count"></span></div><div class="conversation-list">${conversationSkeleton()}</div></section>
     <div class="files-divider"><span>${pull.changedFiles} files changed</span><span><i class="add">+${pull.additions}</i> <i class="del">−${pull.deletions}</i></span></div>`;
   return wrapper;
 }
@@ -741,6 +780,25 @@ function renderDetail(pull: PullRequest): void {
     diffView.setHeader(description);
   }
   const token = renderToken;
+  void loadConversation(pull).then(
+    (items) => {
+      if (token !== renderToken) return;
+      const section = description.querySelector('[data-conversation]');
+      if (section == null) return;
+      renderConversation(section, items);
+      section.addEventListener('click', (event) => {
+        if ((event.target as HTMLElement).closest('[data-toggle-bots]') == null) return;
+        showBotComments = !showBotComments;
+        localStorage.setItem('showBotComments', showBotComments ? '1' : '0');
+        renderConversation(section, items);
+      });
+    },
+    (error: unknown) => {
+      if (token !== renderToken) return;
+      const list = description.querySelector('.conversation-list');
+      if (list != null) list.innerHTML = `<p class="error">Could not load comments: ${escapeHtml(errorMessage(error))}</p>`;
+    },
+  );
   void loadBody(pull, true).then(
     (bodyHtml) => {
       if (token !== renderToken) return;
@@ -1637,6 +1695,7 @@ const COMMANDS: Command[] = [
   ...VIM_COMMANDS,
   ...DIFF_SCROLL_COMMANDS,
   { id: 'toggle-file', section: 'Diff', title: 'Collapse / expand file', aliases: 'fold unfold hide', keys: ['x'], run: toggleCurrentFile, isEnabled: hasFiles },
+  { id: 'toggle-bots', section: 'Pull request', title: 'Show / hide bot comments', aliases: 'devin perry github-actions automated comments conversation', keys: ['⇧b'], run: () => { showBotComments = !showBotComments; localStorage.setItem('showBotComments', showBotComments ? '1' : '0'); const pull = selectedPull(); if (pull != null) renderDetail(pull); toast(showBotComments ? 'Showing bot comments' : 'Hiding bot comments'); } },
   { id: 'toggle-files', section: 'Diff', title: 'Collapse / expand file list', aliases: 'files tree sidebar hide', keys: ['⇧f'], run: toggleFilesSection },
   { id: 'toggle-all', section: 'Diff', title: 'Collapse / expand all files', aliases: 'fold unfold hide', keys: ['⇧c'], run: toggleAllFiles, isEnabled: hasFiles },
   { id: 'diff-style', section: 'Diff', title: 'Toggle split / unified diff', aliases: 'side by side inline view', keys: ['s', '⌘⌥s'], run: toggleStyle },
