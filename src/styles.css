@@ -754,3 +754,18 @@ button.primary, #pr-head .actions button { transition: background-color .12s lin
 #pr-head .actions button svg { width: 14px; height: 14px; flex: none; }
 #pr-head .actions button { gap: 6px; }
 #open-github { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; }
+
+/* Status glyphs are vector masks, not font characters, so they sit in the geometric center at any size. */
+.status { box-sizing: border-box; flex: none; vertical-align: middle; }
+.status.approved::after, .status.blocked::after {
+  content: ''; position: absolute; inset: 0; display: block; font-size: 0; background: var(--bg);
+  -webkit-mask: var(--glyph) center / 70% 70% no-repeat; mask: var(--glyph) center / 70% 70% no-repeat;
+}
+.status.approved { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2.2 5.2 4.2 7.1 7.9 3' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.status.blocked { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Crect x='4.2' y='1.9' width='1.6' height='4.2' rx='.8' fill='%23000'/%3E%3Ccircle cx='5' cy='7.6' r='.95' fill='%23000'/%3E%3C/svg%3E"); }
+#pr-list li.checked .check-box::after {
+  width: 100%; height: 100%; border: 0; transform: none; background: #fff;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2.4 5.1 4.3 7 7.7 3.2' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 80% 80% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2.4 5.1 4.3 7 7.7 3.2' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 80% 80% no-repeat;
+}
+.check-box { box-sizing: border-box; flex: none; }
