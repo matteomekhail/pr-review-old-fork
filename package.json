@@ -9,7 +9,12 @@
     "test": "bun test src",
     "typecheck": "tsc --noEmit",
     "app": "tauri build --bundles app",
-    "install:app": "bash scripts/install.sh"
+    "install:app": "bash scripts/install.sh",
+    "check": "bash bench/check.sh",
+    "bench": "bun bench/run.ts",
+    "bench:noise": "bun bench/run.ts --self-test",
+    "model": "bun bench/model.ts",
+    "climb": "bash bench/climb.sh"
   },
   "dependencies": {
     "@pierre/diffs": "1.5.1",
@@ -17,6 +22,8 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "2",
+    "fast-check": "4.10.2",
+    "playwright-core": "1.63.0",
     "typescript": "5.9.3",
     "vite": "7"
   }

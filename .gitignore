@@ -8,3 +8,7 @@ src-tauri/gen/
 .preview/
 .DS_Store
 *.log
+bench/dist
+.bench-check.log
+bench/dist-base
+bench/.base-src
