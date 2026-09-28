@@ -32,4 +32,4 @@ export const pullArbitrary: fc.Arbitrary<PullRequest> = fc.record({
   repository: { nameWithOwner: repo },
 }));
 
-export const pullListArbitrary: fc.Arbitrary<PullRequest[]> = fc.uniqueArray(pullArbitrary, { maxLength: 150, selector: (pull) => pull.id });
+export const pullListArbitrary: fc.Arbitrary<PullRequest[]> = fc.uniqueArray(pullArbitrary, { maxLength: 150, selector: (pull) => pull.url });
