@@ -12,6 +12,7 @@ import { groupPulls, type PullGroup } from './grouping';
 import { imageUrlsInHtml, preloadImages } from './image-cache';
 import { routeLinksToBrowser } from './external-links';
 import { isSemanticMatch, semanticMatches } from './semantic-search';
+import { VirtualList, type VirtualRow } from './virtual-list';
 import { isReady, isRecent, isSmall, matchesSmartFilter, sortPulls, type SmartFilter, type SortOrder } from './smart';
 import { assessReadiness, isReadinessAvailable, type ReadinessResult } from './readiness';
 
@@ -237,17 +238,50 @@ function scheduleSemanticSearch(): void {
   }, SEMANTIC_DEBOUNCE_MS);
 }
 
-function filteredPulls(): PullRequest[] {
+let listCacheKey = '';
+let filteredCache: PullRequest[] = [];
+let visibleCache: PullRequest[] = [];
+let listVersion = 0;
+
+function invalidateList(): void {
+  listVersion += 1;
+}
+
+function currentListKey(): string {
+  return [listVersion, state.pulls, state.filter, state.smartFilter, state.sortOrder, isGrouped, groups, semanticQuery, semanticScores, aiResults.size, collapsedGroups.size].map((part) => (typeof part === 'object' ? objectId(part) : String(part))).join('|');
+}
+
+const objectIds = new WeakMap<object, number>();
+let nextObjectId = 1;
+
+function objectId(value: object): string {
+  let id = objectIds.get(value);
+  if (id == null) {
+    id = nextObjectId++;
+    objectIds.set(value, id);
+  }
+  return String(id);
+}
+
+function computeLists(): void {
+  const key = currentListKey();
+  if (key === listCacheKey) return;
+  listCacheKey = key;
   const needle = state.filter.trim().toLowerCase();
   const now = Date.now();
   const matching = state.pulls.filter((pull) => matchesSmartFilter(pull, state.smartFilter, now) && matchesText(pull, needle));
-  return sortPulls(matching, state.sortOrder, now, aiScoreFor);
+  filteredCache = sortPulls(matching, state.sortOrder, now, aiScoreFor);
+  visibleCache = !isGrouped || groups.length === 0 ? filteredCache : listSections(filteredCache).flatMap((section) => (section.group != null && collapsedGroups.has(section.group.id) ? [] : section.pulls));
+}
+
+function filteredPulls(): PullRequest[] {
+  computeLists();
+  return filteredCache;
 }
 
 function visiblePulls(): PullRequest[] {
-  const pulls = filteredPulls();
-  if (!isGrouped || groups.length === 0) return pulls;
-  return listSections(pulls).flatMap((section) => (section.group != null && collapsedGroups.has(section.group.id) ? [] : section.pulls));
+  computeLists();
+  return visibleCache;
 }
 
 function renderSmartCounts(): void {
@@ -263,8 +297,20 @@ function renderSmartCounts(): void {
   dom.sort.value = state.sortOrder;
 }
 
+let pullIndexSource: PullRequest[] | null = null;
+let pullIndex = new Map<string, PullRequest>();
+
+function pullById(id: string | null): PullRequest | undefined {
+  if (id == null) return undefined;
+  if (pullIndexSource !== state.pulls) {
+    pullIndexSource = state.pulls;
+    pullIndex = new Map(state.pulls.map((pull) => [pull.id, pull]));
+  }
+  return pullIndex.get(id);
+}
+
 function selectedPull(): PullRequest | undefined {
-  return state.pulls.find((pull) => pull.id === state.selectedId);
+  return pullById(state.selectedId);
 }
 
 function queueLabel(pull: PullRequest): string {
@@ -404,6 +450,15 @@ interface ListSection {
 
 function listSections(pulls: PullRequest[]): ListSection[] {
   if (!isGrouped || groups.length === 0) return [{ group: null, pulls }];
+  const averages = new Map<string, number>();
+  const averageFor = (section: ListSection): number => {
+    const id = section.group?.id ?? '';
+    const cached = averages.get(id);
+    if (cached != null) return cached;
+    const value = averageReadiness(section.pulls);
+    averages.set(id, value);
+    return value;
+  };
   const order = new Map(pulls.map((pull, index) => [pull.id, index]));
   const assigned = new Set<string>();
   const sections = groups
@@ -413,7 +468,7 @@ function listSections(pulls: PullRequest[]): ListSection[] {
       return { group, pulls: members.map((id) => pulls[order.get(id) ?? 0] as PullRequest) };
     })
     .filter((section) => section.pulls.length > 0)
-    .sort((left, right) => averageReadiness(right.pulls) - averageReadiness(left.pulls));
+    .sort((left, right) => averageFor(right) - averageFor(left));
   const rest = pulls.filter((pull) => !assigned.has(pull.id));
   if (rest.length > 0) sections.push({ group: { id: 'ungrouped', label: 'Other', pullIds: rest.map((pull) => pull.id) }, pulls: rest });
   return sections;
@@ -434,23 +489,39 @@ function groupHeader(section: ListSection): string {
   </li>`;
 }
 
+const ROW_HEIGHT = 40;
+const GROUP_ROW_HEIGHT = 34;
+const STATUS_ROW_HEIGHT = 34;
+const virtualList = new VirtualList(dom.list);
+
+function rowHtml(pull: PullRequest, primaryRepo: string | undefined, needle: string): string {
+  const isChecked = state.checkedIds.has(pull.id);
+  const isJev = needle !== '' && !literalMatch(pull, needle) && isSemanticMatch(semanticScores.get(pull.id));
+  return `<li data-key="${pull.id}" data-id="${pull.id}" class="${pull.id === state.selectedId ? 'selected' : ''}${isChecked ? ' checked' : ''}${pull.queueEntry != null ? ' queued' : ''}">
+        <span class="check-box" data-check="${pull.id}" role="checkbox" aria-checked="${isChecked}" title="Select  E / ⇧V"></span>
+        ${statusIcon(pull)}
+        <span class="id" title="${escapeHtml(pull.repository.nameWithOwner)}">${repoTag(pull, primaryRepo)}#${pull.number}</span>
+        <span class="t">${escapeHtml(pull.title)}${isJev ? '<span class="jev-match" title="Matched by Jev">Jev</span>' : ''}</span>
+        <span class="right">${pull.queueEntry != null ? `<span class="queue-pill" title="${escapeHtml(queueLabel(pull))}">Queued</span>` : ''}${readinessDot(pull)}${checksIcon(pull)}<span class="delta"><i class="add">+${pull.additions}</i> <i class="del">−${pull.deletions}</i></span><span class="age">${relativeTime(pull.updatedAt)}</span>${avatar(pull)}</span>
+      </li>`;
+}
+
 function renderList(): void {
   const pulls = filteredPulls();
   const primaryRepo = mostCommonRepo();
   const sections = listSections(pulls);
-  const groupingNote = !isGrouped ? '' : isGrouping ? '<li class="group-status"><span class="spinner"></span>Grouping related work with Jev…</li>' : groups.length === 0 ? '<li class="group-status">No groups yet · press T again or run “Regroup with Jev”</li>' : '';
+  const needle = state.filter.trim().toLowerCase();
+  const rows: VirtualRow[] = [];
+  const note = !isGrouped ? '' : isGrouping ? '<span class="spinner"></span>Grouping related work with Jev…' : groups.length === 0 ? 'No groups yet · press T again or run “Regroup with Jev”' : '';
+  if (note !== '') rows.push({ key: 'status', height: STATUS_ROW_HEIGHT, render: () => `<li data-key="status" class="group-status">${note}</li>` });
+  for (const section of sections) {
+    const group = section.group;
+    if (group != null) rows.push({ key: `group:${group.id}`, height: GROUP_ROW_HEIGHT, render: () => groupHeader(section).replace('<li ', `<li data-key="group:${escapeHtml(group.id)}" `) });
+    if (section.group != null && collapsedGroups.has(section.group.id)) continue;
+    for (const pull of section.pulls) rows.push({ key: pull.id, height: ROW_HEIGHT, render: () => rowHtml(pull, primaryRepo, needle) });
+  }
   dom.list.classList.toggle('grouped', isGrouped && groups.length > 0);
-  dom.list.innerHTML = groupingNote + sections.map((section) => groupHeader(section) + (section.group != null && collapsedGroups.has(section.group.id) ? '' : section.pulls
-    .map(
-      (pull) => `<li data-id="${pull.id}" class="${pull.id === state.selectedId ? 'selected' : ''}${state.checkedIds.has(pull.id) ? ' checked' : ''}${pull.queueEntry != null ? ' queued' : ''}">
-        <span class="check-box" data-check="${pull.id}" role="checkbox" aria-checked="${state.checkedIds.has(pull.id)}" title="Select  E / ⇧V"></span>
-        ${statusIcon(pull)}
-        <span class="id" title="${escapeHtml(pull.repository.nameWithOwner)}">${repoTag(pull, primaryRepo)}#${pull.number}</span>
-        <span class="t">${escapeHtml(pull.title)}${state.filter.trim() !== '' && !literalMatch(pull, state.filter.trim().toLowerCase()) && isSemanticMatch(semanticScores.get(pull.id)) ? '<span class="jev-match" title="Matched by Jev">Jev</span>' : ''}</span>
-        <span class="right">${pull.queueEntry != null ? `<span class="queue-pill" title="${escapeHtml(queueLabel(pull))}">Queued</span>` : ''}${readinessDot(pull)}${checksIcon(pull)}<span class="delta"><i class="add">+${pull.additions}</i> <i class="del">−${pull.deletions}</i></span><span class="age">${relativeTime(pull.updatedAt)}</span>${avatar(pull)}</span>
-      </li>`,
-    )
-    .join(''))).join('');
+  virtualList.setRows(rows);
   document.getElementById('toggle-grouping')?.classList.toggle('active', isGrouped);
   renderCounts();
   renderSmartCounts();
@@ -461,7 +532,7 @@ function renderList(): void {
 let pendingAutoSelect = 0;
 
 function syncDetailVisibility(pulls: PullRequest[]): void {
-  const hasSelection = state.selectedId != null && state.pulls.some((pull) => pull.id === state.selectedId);
+  const hasSelection = selectedPull() != null;
   if (hasSelection) {
     dom.pr.hidden = false;
     dom.empty.hidden = true;
@@ -471,7 +542,7 @@ function syncDetailVisibility(pulls: PullRequest[]): void {
   if (first != null) {
     cancelAnimationFrame(pendingAutoSelect);
     pendingAutoSelect = requestAnimationFrame(() => {
-      if (state.selectedId == null || !state.pulls.some((pull) => pull.id === state.selectedId)) void select(first);
+      if (selectedPull() == null) void select(first);
     });
     return;
   }
@@ -697,10 +768,8 @@ async function select(pull: PullRequest): Promise<void> {
   const token = ++renderToken;
   state.selectedId = pull.id;
   state.activeFileIndex = -1;
-  dom.list.querySelector('.selected')?.classList.remove('selected');
-  const row = dom.list.querySelector<HTMLElement>(`[data-id="${pull.id}"]`);
-  row?.classList.add('selected');
-  row?.scrollIntoView({ block: 'nearest' });
+  virtualList.scrollToKey(pull.id);
+  virtualList.forEachRendered((element) => element.classList.toggle('selected', element.dataset.key === pull.id));
   dom.empty.hidden = true;
   dom.pr.hidden = false;
   currentFiles = [];
@@ -736,8 +805,7 @@ const LIST_PAGE_ROWS = 10;
 const DIFF_LINE_PX = 60;
 
 function listPageSize(): number {
-  const rowHeight = dom.list.querySelector<HTMLElement>('li')?.offsetHeight ?? 40;
-  return Math.max(1, Math.floor(dom.list.clientHeight / rowHeight / 2)) || LIST_PAGE_ROWS;
+  return Math.max(1, Math.floor(dom.list.clientHeight / ROW_HEIGHT / 2)) || LIST_PAGE_ROWS;
 }
 
 function jumpPull(position: 'first' | 'last'): void {
@@ -840,11 +908,12 @@ function persistAiResults(): void {
 function scheduleAiRender(): void {
   cancelAnimationFrame(aiRenderFrame);
   aiRenderFrame = requestAnimationFrame(() => {
-    const selectedRow = dom.list.querySelector<HTMLElement>('li.selected');
-    const offset = selectedRow == null ? null : selectedRow.offsetTop - dom.list.scrollTop;
+    const key = state.selectedId;
+    const before = key == null ? null : virtualList.rowTop(key);
+    const offset = before == null ? null : before - dom.list.scrollTop;
     renderList();
-    const nextRow = dom.list.querySelector<HTMLElement>('li.selected');
-    if (offset != null && nextRow != null) dom.list.scrollTop = nextRow.offsetTop - offset;
+    const after = key == null ? null : virtualList.rowTop(key);
+    if (offset != null && after != null) dom.list.scrollTop = after - offset;
     const pull = selectedPull();
     if (pull != null) renderDetailMeta(pull);
     renderAiStatus();
@@ -876,6 +945,7 @@ async function scoreWithJev(pulls: PullRequest[]): Promise<void> {
       const key = aiKey(pull);
       try {
         aiResults.set(key, await assessReadiness(pull));
+        invalidateList();
       } catch (error) {
         console.warn('jev readiness failed', pull.number, errorMessage(error));
       } finally {
@@ -890,6 +960,7 @@ async function scoreWithJev(pulls: PullRequest[]): Promise<void> {
 let mergeStateRenderFrame = 0;
 
 function applyMergeStates(kind: QueueKind, states: MergeState[]): void {
+  invalidateList();
   const byId = new Map(states.map((mergeState) => [mergeState.id, mergeState]));
   const pulls = queueCache.get(kind);
   if (pulls == null) return;
@@ -1035,7 +1106,7 @@ function switchKind(kind: QueueKind): void {
 }
 
 function checkedPulls(): PullRequest[] {
-  return state.pulls.filter((pull) => state.checkedIds.has(pull.id));
+  return [...state.checkedIds].map((id) => pullById(id)).filter((pull): pull is PullRequest => pull != null);
 }
 
 function renderBulkBar(): void {
@@ -1055,11 +1126,7 @@ function setChecked(ids: Iterable<string>, isChecked: boolean): void {
     if (isChecked) state.checkedIds.add(id);
     else state.checkedIds.delete(id);
   }
-  dom.list.querySelectorAll<HTMLElement>('li').forEach((row) => {
-    const isRowChecked = state.checkedIds.has(row.dataset.id ?? '');
-    row.classList.toggle('checked', isRowChecked);
-    row.querySelector('.check-box')?.setAttribute('aria-checked', String(isRowChecked));
-  });
+  virtualList.refresh();
   renderBulkBar();
 }
 
@@ -1547,6 +1614,7 @@ dom.list.addEventListener('click', (event) => {
     const id = header.dataset.group;
     if (collapsedGroups.has(id)) collapsedGroups.delete(id);
     else collapsedGroups.add(id);
+    invalidateList();
     localStorage.setItem('collapsedGroups', JSON.stringify([...collapsedGroups]));
     renderList();
     return;

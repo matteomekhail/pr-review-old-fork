@@ -13,6 +13,12 @@ function renderLabel(text: string): string {
   return `<span>${escape(label)}</span><span class="tip-keys">${keys}</span>`;
 }
 
+function requestIdleCallbackSafe(callback: () => void): void {
+  const idle = (window as unknown as { requestIdleCallback?: (fn: () => void, options?: { timeout: number }) => void }).requestIdleCallback;
+  if (idle != null) idle(callback, { timeout: 200 });
+  else window.setTimeout(callback, 50);
+}
+
 export function enableTooltips(): void {
   const tip = document.createElement('div');
   tip.id = 'tooltip';
@@ -49,19 +55,36 @@ export function enableTooltips(): void {
   };
 
   document.querySelectorAll<HTMLElement>('[title]').forEach(adopt);
+  let pending: HTMLElement[] = [];
+  let scheduled = false;
+  const flush = (): void => {
+    scheduled = false;
+    const batch = pending;
+    pending = [];
+    batch.forEach((node) => {
+      if (!node.isConnected) return;
+      adopt(node);
+      node.querySelectorAll<HTMLElement>('[title]').forEach(adopt);
+    });
+  };
   new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       if (mutation.type === 'attributes' && mutation.target instanceof HTMLElement) adopt(mutation.target);
       mutation.addedNodes.forEach((node) => {
-        if (!(node instanceof HTMLElement)) return;
-        adopt(node);
-        node.querySelectorAll<HTMLElement>('[title]').forEach(adopt);
+        if (node instanceof HTMLElement) pending.push(node);
       });
+    }
+    if (pending.length > 0 && !scheduled) {
+      scheduled = true;
+      requestIdleCallbackSafe(flush);
     }
   }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
 
   document.addEventListener('pointerover', (event) => {
-    const target = (event.target as HTMLElement).closest<HTMLElement>('[data-tip]');
+    const hovered = event.target as HTMLElement;
+    if (hovered.hasAttribute?.('title')) adopt(hovered);
+    const target = hovered.closest<HTMLElement>('[data-tip], [title]');
+    if (target?.hasAttribute('title')) adopt(target);
     if (target === current) return;
     hide();
     if (target == null || document.body.classList.contains('resizing')) return;

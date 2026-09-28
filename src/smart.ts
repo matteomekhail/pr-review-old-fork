@@ -84,9 +84,14 @@ export function sortPulls(pulls: readonly PullRequest[], order: SortOrder, now: 
   const sorted = [...pulls];
   switch (order) {
     case 'smart':
-      return sorted.sort((left, right) => smartScore(right, now, aiScore) - smartScore(left, now, aiScore));
-    case 'updated':
-      return sorted.sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+    {
+      const scores = new Map(sorted.map((pull) => [pull.id, smartScore(pull, now, aiScore)]));
+      return sorted.sort((left, right) => (scores.get(right.id) ?? 0) - (scores.get(left.id) ?? 0));
+    }
+    case 'updated': {
+      const times = new Map(sorted.map((pull) => [pull.id, Date.parse(pull.updatedAt)]));
+      return sorted.sort((left, right) => (times.get(right.id) ?? 0) - (times.get(left.id) ?? 0));
+    }
     case 'size':
       return sorted.sort((left, right) => diffSize(left) - diffSize(right));
     default:
