@@ -98,6 +98,10 @@ Vim motions work the same in every pane; the modifier picks the pane.
 | Lightbox | `I` open first media · `H`/`L` or `J`/`K` or `←`/`→` cycle · `gg`/`G` first/last · `⌃D`/`⌃U` skip half · `Z` zoom · `O` open · `Q`/`Esc` close |
 | General | `⌘K` commands · `/` filter · `?` shortcuts · `R` refresh |
 
+## Credits
+
+UI icons are [Lucide](https://lucide.dev) (ISC), vendored in `src/icons.ts` so nothing is fetched at runtime. The Devin mark is traced from its GitHub app avatar.
+
 ## License
 
 MIT

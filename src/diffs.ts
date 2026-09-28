@@ -1,4 +1,4 @@
-import { glideScrollTo, prefersReducedMotion } from './motion';
+import { glideScrollBy, glideScrollTo, prefersReducedMotion } from './motion';
 import { CodeView, parsePatchFiles, type CodeViewDiffItem, type FileDiffMetadata } from '@pierre/diffs';
 import { getOrCreateWorkerPoolSingleton } from '@pierre/diffs/worker';
 import DiffWorker from '@pierre/diffs/worker/worker.js?worker';
@@ -135,6 +135,10 @@ export class DiffView {
 
   glideBy(pixels: number): void {
     glideScrollTo(this.root, this.root.scrollTop + pixels);
+  }
+
+  stepBy(pixels: number): void {
+    glideScrollBy(this.root, pixels);
   }
 
   scrollByPage(fraction: number): void {

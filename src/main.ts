@@ -1,5 +1,7 @@
+import { hydrateIcons, icon } from './icons';
 import { attachScrollFade } from './scroll-fade';
-import { animateDialogCancel, flash, glideScrollTo, setVisibleWithMotion } from './motion';
+import { watchKbdGlyphs } from './kbd-glyphs';
+import { animateDialogCancel, flash, glideScrollBy, glideScrollTo, setVisibleWithMotion } from './motion';
 import { ATTENTION_META, ATTENTION_ORDER, attentionReasons, buildAgentPrompt, needsAttention, prStatus, type AttentionReason } from './status';
 import { applyThemeColors, SYSTEM_THEME_ID, THEMES, themeById, type AppTheme } from './themes';
 import { ThemePicker } from './theme-picker';
@@ -45,6 +47,8 @@ const element = <T extends HTMLElement>(id: string): T => {
   if (found == null) throw new Error(`missing #${id}`);
   return found as T;
 };
+
+hydrateIcons();
 
 const dom = {
   list: element<HTMLOListElement>('pr-list'),
@@ -110,7 +114,7 @@ let currentFiles: ParsedFile[] = [];
 let renderToken = 0;
 let toastTimer: number | undefined;
 
-const MERGE_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="4.5" cy="12.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="11.5" cy="8" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.5 5.1v5.8M4.5 5.1c0 2.4 2.2 2.9 5.4 2.9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+const MERGE_ICON = icon('merge');
 
 const MERGE_METHOD: MergeMethod = 'squash';
 syncMergeLabel();
@@ -127,9 +131,9 @@ function syncMergeLabel(): void {
 type ToastTone = 'info' | 'success' | 'error';
 
 const TOAST_ICONS: Record<ToastTone, string> = {
-  info: '<svg viewBox="0 0 20 20" width="18" height="18"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 9v5M10 6.2v.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
-  success: '<svg viewBox="0 0 20 20" width="18" height="18"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6.2 10.3l2.5 2.5 5.1-5.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  error: '<svg viewBox="0 0 20 20" width="18" height="18"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 5.8v5.4M10 14.1v.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  info: icon('info'),
+  success: icon('circleCheck'),
+  error: icon('circleAlert'),
 };
 const SUCCESS_PATTERN = /^(approved|merged|queued|copied|added|#\d+ (queued|added))/i;
 
@@ -361,13 +365,13 @@ function statusIcon(pull: PullRequest): string {
 function checksIcon(pull: PullRequest): string {
   switch (pull.checkState) {
     case 'SUCCESS':
-      return '<span class="check ok" title="Checks passed">✓</span>';
+      return `<span class="check ok" title="Checks passed">${icon('check')}</span>`;
     case 'FAILURE':
     case 'ERROR':
-      return '<span class="check bad" title="Checks failed">✕</span>';
+      return `<span class="check bad" title="Checks failed">${icon('x')}</span>`;
     case 'PENDING':
     case 'EXPECTED':
-      return '<span class="check wait" title="Checks running">◌</span>';
+      return `<span class="check wait" title="Checks running">${icon('circleDashed')}</span>`;
     case null:
       return '';
     default:
@@ -508,7 +512,7 @@ function groupHeader(section: ListSection): string {
   if (group == null) return '';
   const isCollapsed = collapsedGroups.has(group.id);
   return `<li class="group-row${isCollapsed ? ' collapsed' : ''}" data-group="${escapeHtml(group.id)}">
-    <span class="caret">›</span>
+    <span class="caret">${icon('chevronRight')}</span>
     <span class="group-label" title="${escapeHtml(group.label)}">${escapeHtml(group.label)}</span>
     <button class="group-select" data-group-select="${escapeHtml(group.id)}" title="Select all ${section.pulls.length} in group">Select</button>
   </li>`;
@@ -558,7 +562,9 @@ let pendingAutoSelect = 0;
 
 function syncDetailVisibility(pulls: PullRequest[]): void {
   const hasSelection = selectedPull() != null;
+  if (state.pulls.length > 0) document.getElementById('list-skeleton')?.remove();
   if (hasSelection) {
+    clearBootSkeletons();
     dom.pr.hidden = false;
     dom.empty.hidden = true;
     return;
@@ -571,6 +577,8 @@ function syncDetailVisibility(pulls: PullRequest[]): void {
     });
     return;
   }
+  if (!lastFetchedAt.has(state.kind) && state.pulls.length === 0) return;
+  clearBootSkeletons();
   dom.pr.hidden = true;
   dom.empty.hidden = false;
   dom.empty.textContent = state.pulls.length === 0 ? 'No pull requests here.' : pulls.length === 0 ? 'No matches.' : 'Select a pull request';
@@ -690,6 +698,28 @@ function clampLongComments(list: Element): void {
       body.after(more);
     });
   });
+}
+
+function listSkeleton(): string {
+  const titles = [72, 58, 81, 64, 49, 77, 60, 69, 54, 74, 62, 57, 79, 51];
+  return titles.map((width, index) => `<div class="sk-row" style="--delay:${index * 40}ms"><span class="sk-dot"></span><span class="sk-line sk-id"></span><span class="sk-line" style="width:${width}%"></span><span class="sk-line sk-age"></span></div>`).join('');
+}
+
+function bootSkeleton(): string {
+  return `<div class="boot-head"><span class="sk-line" style="width:180px"></span><span class="sk-dot"></span></div>
+    <div class="boot-split"><div class="boot-desc">${descriptionSkeleton()}</div><div class="boot-diff">${diffSkeleton()}</div></div>`;
+}
+
+function renderBootSkeletons(): void {
+  const list = document.getElementById('list-skeleton');
+  if (list != null && state.pulls.length === 0) list.innerHTML = listSkeleton();
+  const boot = dom.empty.querySelector('.boot-skeleton');
+  if (boot != null) boot.innerHTML = bootSkeleton();
+}
+
+function clearBootSkeletons(): void {
+  document.getElementById('list-skeleton')?.remove();
+  dom.empty.classList.remove('is-loading');
 }
 
 function descriptionSkeleton(): string {
@@ -1004,8 +1034,8 @@ function scrollPane(pane: Exclude<PaneTarget, 'list'>, motion: VimMotion): void 
   };
   const isStep = motion === 'line-down' || motion === 'line-up';
   if (isStep) {
-    if (target === dom.diffRoot) diffView.scrollBy(deltas[motion]);
-    else target.scrollTop = Math.max(0, Math.min(target.scrollHeight - target.clientHeight, target.scrollTop + deltas[motion]));
+    if (target === dom.diffRoot) diffView.stepBy(deltas[motion]);
+    else glideScrollBy(target, deltas[motion]);
     return;
   }
   if (target === dom.diffRoot) diffView.glideBy(deltas[motion]);
@@ -1241,7 +1271,10 @@ function refresh(kind: QueueKind, isForced = false): Promise<void> {
     .catch((error: unknown) => {
       if (kind !== state.kind) return;
       toast(`GitHub: ${errorMessage(error).split('\n')[0]}`, true);
-      if (state.pulls.length === 0) dom.empty.textContent = `Could not load: ${errorMessage(error)}`;
+      if (state.pulls.length === 0) {
+        clearBootSkeletons();
+        dom.empty.textContent = `Could not load: ${errorMessage(error)}`;
+      }
     })
     .finally(() => {
       inFlight.delete(kind);
@@ -1875,7 +1908,7 @@ function openHelp(): void {
 const VIM_COMMANDS = vimCommands();
 
 const DIFF_SCROLL_COMMANDS: Command[] = [
-  { id: 'diff-scroll-down', section: 'Diff', title: 'Scroll diff down', aliases: 'vim line', keys: ['⌘j'], run: () => diffView.scrollBy(DIFF_LINE_PX * 2), isEnabled: hasPull },
+  { id: 'diff-scroll-down', section: 'Diff', title: 'Scroll diff down', aliases: 'vim line', keys: ['⌘j'], run: () => diffView.stepBy(DIFF_LINE_PX * 2), isEnabled: hasPull },
 ];
 
 const COMMANDS: Command[] = [
@@ -2053,6 +2086,7 @@ element('refresh-button').addEventListener('click', manualRefresh);
 element('open-triage').addEventListener('click', openTriage);
 document.querySelectorAll<HTMLElement>('.h-scroll').forEach(attachScrollFade);
 animateDialogCancel();
+watchKbdGlyphs();
 element('theme-button').addEventListener('click', openThemePicker);
 refreshTicker = window.setInterval(renderRefreshStatus, 5_000);
 void refreshTicker;
@@ -2099,6 +2133,7 @@ void isReadinessAvailable().then((isAvailable) => {
   if (isAvailable) void ensureGroups();
 });
 
+renderBootSkeletons();
 void refresh(state.kind, true).then(() => {
   (['mine', 'review', 'involved'] satisfies QueueKind[]).filter((kind) => kind !== state.kind).forEach((kind) => void refresh(kind, true));
 });

@@ -99,25 +99,54 @@ export function flash(element: HTMLElement): void {
   element.addEventListener('animationend', () => element.classList.remove('flash'), { once: true });
 }
 
-const activeScrolls = new WeakMap<HTMLElement, number>();
-const SCROLL_MS = 180;
+interface ScrollGlide {
+  frame: number;
+  from: number;
+  to: number;
+  began: number;
+  duration: number;
+}
 
-export function glideScrollTo(element: HTMLElement, target: number): void {
-  const max = element.scrollHeight - element.clientHeight;
-  const destination = Math.max(0, Math.min(max, target));
-  cancelAnimationFrame(activeScrolls.get(element) ?? 0);
-  const start = element.scrollTop;
-  const distance = destination - start;
-  if (Math.abs(distance) < 2 || prefersReducedMotion()) {
+const glides = new WeakMap<HTMLElement, ScrollGlide>();
+const JUMP_MS = 180;
+const STEP_MS = 110;
+
+function easeOutCubic(progress: number): number {
+  return 1 - (1 - progress) ** 3;
+}
+
+function clampScroll(element: HTMLElement, value: number): number {
+  return Math.max(0, Math.min(element.scrollHeight - element.clientHeight, value));
+}
+
+function run(element: HTMLElement, destination: number, duration: number): void {
+  const previous = glides.get(element);
+  if (previous != null) cancelAnimationFrame(previous.frame);
+  const from = element.scrollTop;
+  if (Math.abs(destination - from) < 1 || prefersReducedMotion()) {
     element.scrollTop = destination;
+    glides.delete(element);
     return;
   }
-  const began = performance.now();
+  const glide: ScrollGlide = { frame: 0, from, to: destination, began: performance.now(), duration };
   const step = (now: number): void => {
-    const progress = Math.min(1, (now - began) / SCROLL_MS);
-    const eased = 1 - (1 - progress) ** 3;
-    element.scrollTop = start + distance * eased;
-    if (progress < 1) activeScrolls.set(element, requestAnimationFrame(step));
+    const progress = Math.min(1, (now - glide.began) / glide.duration);
+    element.scrollTop = glide.from + (glide.to - glide.from) * easeOutCubic(progress);
+    if (progress < 1) glide.frame = requestAnimationFrame(step);
+    else glides.delete(element);
   };
-  activeScrolls.set(element, requestAnimationFrame(step));
+  glide.frame = requestAnimationFrame(step);
+  glides.set(element, glide);
+}
+
+/** Glide to an absolute position (half/full page, top/bottom). */
+export function glideScrollTo(element: HTMLElement, target: number): void {
+  run(element, clampScroll(element, target), JUMP_MS);
+}
+
+/** Glide by a delta that accumulates onto an in-flight glide, so held keys stay smooth. */
+export function glideScrollBy(element: HTMLElement, delta: number, duration = STEP_MS): void {
+  const inFlight = glides.get(element);
+  const base = inFlight?.to ?? element.scrollTop;
+  run(element, clampScroll(element, base + delta), duration);
 }

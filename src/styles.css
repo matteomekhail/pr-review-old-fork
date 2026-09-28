@@ -769,3 +769,70 @@ button.primary, #pr-head .actions button { transition: background-color .12s lin
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2.4 5.1 4.3 7 7.7 3.2' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 80% 80% no-repeat;
 }
 .check-box { box-sizing: border-box; flex: none; }
+
+/* Modifier and arrow keys are drawn masks so they sit in the exact centre of the badge. */
+kbd[data-glyph] { color: transparent !important; position: relative; font-size: 0 !important; min-width: 16px; height: 16px; padding: 0 !important; display: inline-grid; place-items: center; vertical-align: middle; }
+kbd[data-glyph]::before { content: ''; width: 10px; height: 10px; background: var(--kbd-ink, var(--text-3)); -webkit-mask: var(--kbd-glyph) center / contain no-repeat; mask: var(--kbd-glyph) center / contain no-repeat; }
+button.primary kbd[data-glyph], #merge kbd[data-glyph], #bulk-merge kbd[data-glyph] { --kbd-ink: rgb(255 255 255 / .92); }
+#tooltip kbd[data-glyph] { --kbd-ink: #e3e5e8; }
+kbd:not([data-glyph]) { display: inline-grid; place-items: center; box-sizing: border-box; min-width: 16px; height: 16px; padding: 0 4px; line-height: 1; vertical-align: middle; text-box: trim-both cap alphabetic; }
+kbd[data-glyph='cmd'] { --kbd-glyph: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2012%2012%27%20fill%3D%27none%27%20stroke%3D%27%23000%27%20stroke-width%3D%271.3%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M4.5%204.5h3v3h-3z%20M4.5%204.5V3.2a1.3%201.3%200%201%200-1.3%201.3h1.3%20M7.5%204.5V3.2a1.3%201.3%200%201%201%201.3%201.3H7.5%20M4.5%207.5v1.3a1.3%201.3%200%201%201-1.3-1.3h1.3%20M7.5%207.5v1.3a1.3%201.3%200%201%200%201.3-1.3H7.5%27%2F%3E%3C%2Fsvg%3E"); }
+kbd[data-glyph='shift'] { --kbd-glyph: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2012%2012%27%20fill%3D%27none%27%20stroke%3D%27%23000%27%20stroke-width%3D%271.3%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M6%202.2%202.3%206.3h2.1v3.4h3.2V6.3h2.1z%27%2F%3E%3C%2Fsvg%3E"); }
+kbd[data-glyph='opt'] { --kbd-glyph: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2012%2012%27%20fill%3D%27none%27%20stroke%3D%27%23000%27%20stroke-width%3D%271.3%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M2%203.2h2.6l2.8%205.6H10%20M7.2%203.2H10%27%2F%3E%3C%2Fsvg%3E"); }
+kbd[data-glyph='ctrl'] { --kbd-glyph: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2012%2012%27%20fill%3D%27none%27%20stroke%3D%27%23000%27%20stroke-width%3D%271.3%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M3%206.8%206%203.8l3%203%27%2F%3E%3C%2Fsvg%3E"); }
+kbd[data-glyph='enter'] { --kbd-glyph: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2012%2012%27%20fill%3D%27none%27%20stroke%3D%27%23000%27%20stroke-width%3D%271.3%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M9.5%203v2.9a1%201%200%200%201-1%201H3%20M5%204.9%203%206.9l2%202%27%2F%3E%3C%2Fsvg%3E"); }
+kbd[data-glyph='up'] { --kbd-glyph: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2012%2012%27%20fill%3D%27none%27%20stroke%3D%27%23000%27%20stroke-width%3D%271.3%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M6%209.5v-7%20M3.2%205.3%206%202.5l2.8%202.8%27%2F%3E%3C%2Fsvg%3E"); }
+kbd[data-glyph='down'] { --kbd-glyph: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2012%2012%27%20fill%3D%27none%27%20stroke%3D%27%23000%27%20stroke-width%3D%271.3%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M6%202.5v7%20M3.2%206.7%206%209.5l2.8-2.8%27%2F%3E%3C%2Fsvg%3E"); }
+kbd[data-glyph='left'] { --kbd-glyph: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2012%2012%27%20fill%3D%27none%27%20stroke%3D%27%23000%27%20stroke-width%3D%271.3%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M9.5%206h-7%20M5.3%203.2%202.5%206l2.8%202.8%27%2F%3E%3C%2Fsvg%3E"); }
+kbd[data-glyph='right'] { --kbd-glyph: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2012%2012%27%20fill%3D%27none%27%20stroke%3D%27%23000%27%20stroke-width%3D%271.3%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M2.5%206h7%20M6.7%203.2%209.5%206%206.7%208.8%27%2F%3E%3C%2Fsvg%3E"); }
+
+/* First-load skeletons shaped like the real list and PR view. */
+#list-pane { position: relative; }
+.list-skeleton { position: absolute; left: 0; right: 0; top: calc(var(--titlebar-h) + 41px); bottom: 0; overflow: hidden; pointer-events: none; z-index: 2; background: var(--bg); }
+.list-skeleton:empty { display: none; }
+.sk-row { display: grid; grid-template-columns: 14px 44px minmax(0, 1fr) 22px; align-items: center; gap: 10px; height: 40px; padding: 0 14px 0 30px; border-bottom: 1px solid var(--border-soft); opacity: 0; animation: sk-in .32s var(--ease-out) forwards; animation-delay: var(--delay, 0ms); }
+.sk-row .sk-dot { width: 14px; height: 14px; border-radius: 50%; }
+.sk-row .sk-line { height: 9px; }
+.sk-row .sk-id { width: 44px; }
+.sk-row .sk-age { width: 22px; justify-self: end; }
+@keyframes sk-in { from { opacity: 0; transform: translate3d(0, 4px, 0); } to { opacity: 1; transform: none; } }
+.list-skeleton { isolation: isolate; }
+.list-skeleton::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--text) 5%, transparent) 45%, transparent 70%); transform: translate3d(-100%, 0, 0); animation: shimmer 1.4s ease-in-out infinite; will-change: transform; }
+
+#empty.is-loading { display: block; padding: 0; text-align: left; color: inherit; }
+.boot-skeleton { display: flex; flex-direction: column; height: 100%; opacity: 0; animation: sk-in .3s var(--ease-out) .08s forwards; }
+.boot-head { display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 24px; margin-top: var(--titlebar-h); border-bottom: 1px solid var(--border-soft); }
+.boot-head .sk-line { height: 10px; }
+.boot-head .sk-dot { width: 16px; height: 16px; border-radius: 50%; }
+.boot-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
+.boot-desc { padding: 20px 24px; border-right: 1px solid var(--border-soft); overflow: hidden; }
+.boot-diff { padding: 16px 16px; overflow: hidden; }
+.boot-desc .skeleton .sk-line:first-child { height: 22px; width: 70% !important; margin-bottom: 8px; }
+#app.hide-list .boot-head { padding-left: calc(var(--traffic-lights-w) + 8px); margin-top: 0; height: var(--titlebar-h); }
+@media (prefers-reduced-motion: reduce) { .sk-row, .boot-skeleton { animation: none; opacity: 1; } .list-skeleton::after { animation: none; } }
+#empty.is-loading { margin: 0; align-self: stretch; flex: 1; width: 100%; height: 100%; min-width: 0; display: flex; }
+#empty.is-loading .boot-skeleton { flex: 1; width: 100%; }
+.boot-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); }
+.boot-desc .skeleton, .boot-diff .skeleton { width: 100%; }
+.boot-diff .sk-diff-card { margin-bottom: 12px; }
+.boot-diff .sk-diff-row .sk-line { flex: 1; }
+.list-skeleton::after { animation-duration: 1.6s; }
+#detail:has(#empty.is-loading) { display: flex; }
+.boot-diff .sk-diff-row .sk-line { flex: 0 1 auto; }
+
+/* Icon system: every UI icon is Lucide (24px grid, 2px stroke), sized here in one place. */
+.ico { display: block; flex: none; width: 16px; height: 16px; stroke-width: 1.75; }
+#pr-head .actions button .ico, #pr-head .head-left .ico { width: 15px; height: 15px; }
+#pr-head .actions button svg:not(.ico) { width: 15px; height: 15px; }
+.pane-head .icon-button .ico { width: 15px; height: 15px; }
+.search .ico { width: 14px; height: 14px; color: var(--text-4); order: 1; }
+.filter-bar .chip .ico { width: 13px; height: 13px; }
+.chip-agent .ico { color: var(--wait); }
+#merge .ico { width: 15px; height: 15px; stroke-width: 2; }
+#toast .toast-icon .ico { width: 18px; height: 18px; stroke-width: 2; }
+.check { display: inline-grid; place-items: center; width: 14px; height: 14px; font-size: 0; }
+.check .ico { width: 13px; height: 13px; stroke-width: 2.25; }
+.caret { display: inline-grid; place-items: center; width: 14px; height: 14px; }
+.caret .ico { width: 13px; height: 13px; stroke-width: 2.25; }
+#pr-list li.group-row .caret { width: 14px; }
+.devin-logo { width: 15px; height: 15px; }
