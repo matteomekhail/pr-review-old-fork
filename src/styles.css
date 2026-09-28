@@ -52,7 +52,7 @@ i.del, .del { color: var(--del); font-style: normal; }
 
 #sidebar { background: var(--bg); display: flex; flex-direction: column; padding: 0 8px 10px; -webkit-app-region: drag; }
 .workspace { display: flex; align-items: center; gap: 8px; padding: 10px 8px 12px; color: var(--text); font-weight: 600; font-size: 13px; }
-.logo { width: 20px; height: 20px; margin: -1px; }
+.logo { width: 24px; height: 24px; margin: -3px -2px -3px -3px; }
 .views { display: grid; gap: 1px; -webkit-app-region: no-drag; }
 .views button { display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border: 0; background: none; border-radius: var(--radius); color: var(--text-2); font-weight: 500; text-align: left; }
 .views button:hover { background: var(--bg-hover); }
