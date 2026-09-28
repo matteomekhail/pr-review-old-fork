@@ -22,6 +22,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   body: (args) => generateBody(byNumber.get(args.number as number) ?? pulls[0]!),
   diff: (args) => generateDiff(byNumber.get(args.number as number) ?? pulls[0]!),
   conversation: () => JSON.stringify({ data: { repository: { pullRequest: { comments: { totalCount: 0, nodes: [] }, reviews: { totalCount: 0, nodes: [] } } } } }),
+  viewer: () => 'someone-else',
   merge_queue: () => JSON.stringify({ data: { repository: { mergeQueue: null } } }),
   readiness_available: () => false,
   review_context: () => { throw new Error('offline harness'); },

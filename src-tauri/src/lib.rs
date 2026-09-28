@@ -205,6 +205,11 @@ async fn approve(repo: String, number: u64) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn viewer() -> Result<String, String> {
+    gh(&["api", "user", "--jq", ".login"]).await.map(|login| login.trim().to_string())
+}
+
+#[tauri::command]
 async fn merge_queue(repo: String, base: String) -> Result<String, String> {
     validate_repo(&repo)?;
     if base.is_empty() || base.len() > 255 || base.starts_with('-') || base.chars().any(|character| character.is_whitespace() || character.is_control()) {
@@ -345,7 +350,7 @@ async fn open_in_browser(url: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![queue, merge_queue, merge_states, conversation, body, diff, approve, merge, open_in_browser, review_context, readiness_available, readiness])
+        .invoke_handler(tauri::generate_handler![queue, viewer, merge_queue, merge_states, conversation, body, diff, approve, merge, open_in_browser, review_context, readiness_available, readiness])
         .run(tauri::generate_context!())
         .expect("error while running PR Review");
 }

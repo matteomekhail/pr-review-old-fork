@@ -10,7 +10,7 @@ A fast, keyboard-first macOS app for reviewing and merging GitHub pull requests.
 - **Smart filters:** Ready (green, mergeable, no changes requested), Small (≤150 lines), Recent (48h). The Smart sort ranks by readiness.
 - **Jev readiness (optional):** with `OPENROUTER_API_KEY` set, each PR is scored by [Jev](https://openrouter.ai) on review evidence, open concerns, change risk and scope, taken from its description, reviews and comments. Without a key, it falls back to the built-in rules.
 - **Diffs:** [`@pierre/diffs`](https://www.npmjs.com/package/@pierre/diffs), virtualized and syntax-highlighted in web workers. Collapsible files and sticky headers.
-- **Layouts:** stacked (description above diff) or side by side (`V`: description left, diff right). Panes resize and hide.
+- **Layout:** description on the left, diff on the right. Panes resize and hide, and `1`–`4` apply preset proportions.
 - **Smart search (Jev):** typing a topic like `frontend` or `billing` also finds PRs that don't contain the word, tagged **Jev** in the list. Literal matches still appear instantly.
 - **Smart groups (Jev):** `T` groups related PRs into efforts, such as a run of lib extractions or UI refactors. Groups are ordered by average readiness and each can be collapsed or selected as a whole for bulk merge.
 - **Conversation:** PR comments and reviews appear under the description, humans and bots alike (Devin, Perry, GitHub Actions…), with review verdicts highlighted. `⇧B` hides bot comments.
@@ -71,7 +71,7 @@ Vim motions work the same in every pane; the modifier picks the pane.
 | Line down / up | `⌃E` / `⌃Y` (or `⌃N` / `⌃P`) | `⌥E` / `⌥Y` (or `⌥J` / `⌥K`) | `⌘E` / `⌘Y` |
 | Top / bottom | `⌃G` / `⌃⇧G` | `⌥G` / `⌥⇧G` | `⌘G` / `⌘⇧G` |
 
-`⌘J` / `⌘K` always scroll the diff, whichever pane it's in. The middle pane is the diff in stacked mode and the description in side-by-side mode (`V`). The right pane is the file list in stacked mode and the diff in side-by-side mode.
+`⌘J` / `⌘K` always scroll the diff. The middle pane is the description and the right pane is the diff.
 
 | Area | Keys |
 | --- | --- |
@@ -80,7 +80,7 @@ Vim motions work the same in every pane; the modifier picks the pane.
 | Filters | `⇧T` group related work · `⌥1` Ready · `⌥2` Small · `⌥3` Recent · `⌥4` Attention · `⌥5` Tested · `⌥0` All · `⇧S` sort · `⇧X` fix with agent |
 | Select | `⇧V` visual mode (then `J`/`K`) · `E` toggle · `⇧J`/`⇧K` extend · `⇧R` all ready · `⌘A` all · `Esc` clear |
 | Act | `⇧X` copy an agent prompt to fix every PR with conflicts or failing checks (or just the selected ones) · `O` open on GitHub (in Chrome) · `A` approve · `⌘↵` merge (all selected when several are checked) · `⇧A` bulk approve · `⌘↵` bulk merge |
-| Layout | `T` theme picker · `V` side by side · `⌘B` PR list · `⌘⌥1` review · `⌘⌥2` diff focus · `⌘⌥3` read description · `⌘⌥4` triage · `⌘I` details · `⌘.` focus |
+| Layout | `T` theme picker · `⌘B` PR list · `1` review · `2` diff focus · `3` read description · `4` triage · `⌘I` file list · `⌘.` focus |
 | Lightbox | `I` open first media · `H`/`L` or `J`/`K` or `←`/`→` cycle · `gg`/`G` first/last · `⌃D`/`⌃U` skip half · `Z` zoom · `O` open · `Q`/`Esc` close |
 | General | `/` commands · `?` shortcuts · `F` filter · `R` refresh |
 

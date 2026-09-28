@@ -631,3 +631,11 @@ diffs-container { --diffs-dark-bg: var(--bg); --diffs-light-bg: var(--bg); }
 .filter-bar .sort { height: 22px; }
 #list-pane .pane-head .icon-button { width: 24px; height: 24px; }
 #list-pane .pane-head .refresh-status:not(.active) { display: none; }
+#pr-head .actions .icon-button { width: 28px; height: 28px; color: var(--text-3); border-radius: var(--radius); }
+#pr-head .actions .icon-button:hover { background: var(--bg-hover); color: var(--text); }
+#pr-head .actions .icon-button:disabled { opacity: .35; pointer-events: auto; cursor: not-allowed; }
+#pr-head .actions #approve:not(:disabled):hover { color: var(--ok); }
+#pr-head .actions .icon-button.on { color: var(--text); }
+#merge.merge-icon { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 32px; padding: 0 8px; }
+#merge .merge-count { font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+#merge.merge-icon:disabled { opacity: .5; }

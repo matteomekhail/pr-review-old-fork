@@ -3,7 +3,7 @@ import { ATTENTION_META, ATTENTION_ORDER, attentionReasons, buildAgentPrompt, ne
 import { applyThemeColors, SYSTEM_THEME_ID, THEMES, themeById, type AppTheme } from './themes';
 import { ThemePicker } from './theme-picker';
 import './styles.css';
-import { approvePull, usesMergeQueue, fetchBody, fetchDiff, fetchMergeStates, fetchQueue, type MergeState, mergePull, openInBrowser, type MergeMethod, type PullRequest, type QueueKind } from './github';
+import { approvePull, fetchViewerLogin, usesMergeQueue, fetchBody, fetchDiff, fetchMergeStates, fetchQueue, type MergeState, mergePull, openInBrowser, type MergeMethod, type PullRequest, type QueueKind } from './github';
 import { DiffView, parseDiff, type DiffStyle, type ParsedFile } from './diffs';
 import { sanitizeHtml } from './sanitize';
 import { CommandRegistry, renderShortcut, type Command } from './commands';
@@ -56,7 +56,6 @@ const dom = {
   descPane: element('desc-pane'),
   inspector: element('inspector'),
   bodySplit: element('pr-body-split'),
-  toggleMode: element<HTMLButtonElement>('toggle-mode'),
   files: element('files'),
   fileCount: element('file-count'),
   diffRoot: element('diff-root'),
@@ -98,6 +97,7 @@ const state: State = {
   diffStyle: localStorage.getItem('diffStyle') === 'unified' ? 'unified' : 'split',
 };
 
+let viewer: string | null = null;
 const diffCache = new Map<string, Promise<ParsedFile[]>>();
 const queueCache = new Map<QueueKind, PullRequest[]>();
 let isSelectedQueued = false;
@@ -106,15 +106,18 @@ let currentFiles: ParsedFile[] = [];
 let renderToken = 0;
 let toastTimer: number | undefined;
 
+const MERGE_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="4.5" cy="12.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="11.5" cy="8" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.5 5.1v5.8M4.5 5.1c0 2.4 2.2 2.9 5.4 2.9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+
 dom.mergeMethod.value = localStorage.getItem('mergeMethod') ?? 'squash';
 syncMergeLabel();
+
 
 function syncMergeLabel(): void {
   const selectedCount = state.checkedIds.size;
   const baseLabel = isSelectedQueued ? 'Merge when ready' : MERGE_LABELS[dom.mergeMethod.value as MergeMethod];
   const label = selectedCount > 0 ? `${isSelectedQueued ? 'Queue' : 'Merge'} ${selectedCount} selected` : baseLabel;
-  dom.merge.innerHTML = `${label} <kbd>⌘</kbd><kbd>↵</kbd>`;
-  dom.merge.title = isSelectedQueued ? 'Add to merge queue  ⌘↵' : 'Merge  ⌘↵';
+  dom.merge.innerHTML = `${MERGE_ICON}${selectedCount > 0 ? `<span class="merge-count">${selectedCount}</span>` : ''}`;
+  dom.merge.title = `${label}  ⌘↵`;
   dom.mergeMethod.hidden = isSelectedQueued;
 }
 
@@ -758,7 +761,13 @@ function renderDetailMeta(pull: PullRequest): void {
     chip(relativeTime(pull.updatedAt), `Updated ${relativeTime(pull.updatedAt)} ago`, 'plain muted-chip'),
   ].join('');
   dom.merge.disabled = pull.isDraft || pull.mergeable === 'CONFLICTING' || pull.queueEntry != null;
-  if (pull.queueEntry != null) dom.merge.innerHTML = `In queue #${pull.queueEntry.position + 1}`;
+  const isOwn = isOwnPull(pull);
+  dom.approve.disabled = isOwn;
+  dom.approve.title = isOwn ? 'You can’t approve your own pull request' : 'Approve  A';
+  if (pull.queueEntry != null) {
+    dom.merge.innerHTML = `${MERGE_ICON}<span class="merge-count">#${pull.queueEntry.position + 1}</span>`;
+    dom.merge.title = `In merge queue #${pull.queueEntry.position + 1}`;
+  }
 }
 
 function syncQueueState(pull: PullRequest): void {
@@ -838,6 +847,7 @@ function toggleFilesSection(): void {
   isFilesCollapsed = !isFilesCollapsed;
   localStorage.setItem('filesCollapsed', isFilesCollapsed ? '1' : '0');
   applyFilesCollapsed();
+  document.getElementById('toggle-inspector')?.classList.toggle('on', !isFilesCollapsed);
 }
 
 function renderFiles(files: ParsedFile[]): void {
@@ -859,7 +869,8 @@ function markFileCollapsed(id: string, isCollapsed: boolean): void {
 
 function syncToggleAll(): void {
   const isAllCollapsed = currentFiles.length > 0 && diffView.collapsedCount() === currentFiles.length;
-  dom.toggleAll.innerHTML = `${isAllCollapsed ? 'Expand all' : 'Collapse all'} <kbd>⇧</kbd><kbd>C</kbd>`;
+  dom.toggleAll.title = `${isAllCollapsed ? 'Expand all files' : 'Collapse all files'}  ⇧C`;
+  dom.toggleAll.classList.toggle('on', isAllCollapsed);
 }
 
 function setActiveFile(index: number): void {
@@ -912,8 +923,19 @@ function select(pull: PullRequest): Promise<void> {
   });
 }
 
+let lastRenderedPullId: string | null = null;
+
+function resetScrollForNewPull(pull: PullRequest): void {
+  if (lastRenderedPullId === pull.id) return;
+  lastRenderedPullId = pull.id;
+  dom.descPane.scrollTop = 0;
+  dom.diffRoot.scrollTop = 0;
+  dom.files.scrollTop = 0;
+}
+
 async function renderSelection(pull: PullRequest): Promise<void> {
   const token = ++renderToken;
+  resetScrollForNewPull(pull);
   dom.empty.hidden = true;
   dom.pr.hidden = false;
   currentFiles = [];
@@ -1286,6 +1308,8 @@ function renderBulkBar(): void {
   const readyCount = checked.filter(isReady).length;
   dom.bulkCount.innerHTML = `<b>${checked.length}</b> selected${readyCount < checked.length ? ` · <span class="warn">${checked.length - readyCount} not ready</span>` : ''}`;
   dom.bulkMerge.disabled = checked.every((pull) => pull.isDraft || pull.mergeable === 'CONFLICTING');
+  dom.bulkApprove.disabled = checked.every(isOwnPull);
+  dom.bulkApprove.title = dom.bulkApprove.disabled ? 'You can’t approve your own pull requests' : 'Approve selected  ⇧A';
 }
 
 function syncCheckedRows(): void {
@@ -1439,13 +1463,23 @@ async function bulkMerge(): Promise<void> {
   void refresh(state.kind);
 }
 
+function isOwnPull(pull: PullRequest): boolean {
+  return viewer != null && pull.author?.login.toLowerCase() === viewer.toLowerCase();
+}
+
 async function bulkApprove(): Promise<void> {
-  const pulls = checkedPulls();
-  if (pulls.length === 0) return;
+  const checked = checkedPulls();
+  const pulls = checked.filter((pull) => !isOwnPull(pull));
+  if (pulls.length === 0) {
+    if (checked.length > 0) toast('You can’t approve your own pull requests', true);
+    return;
+  }
   dom.bulkApprove.disabled = true;
   const results = await Promise.allSettled(pulls.map((pull) => approvePull(pull)));
   const failed = results.filter((result) => result.status === 'rejected').length;
-  toast(failed === 0 ? `Approved ${pulls.length}` : `Approved ${pulls.length - failed}, failed ${failed}`, failed > 0);
+  const skipped = checked.length - pulls.length;
+  const skippedNote = skipped > 0 ? ` · skipped ${skipped} of yours` : '';
+  toast(failed === 0 ? `Approved ${pulls.length}${skippedNote}` : `Approved ${pulls.length - failed}, failed ${failed}${skippedNote}`, failed > 0);
   dom.bulkApprove.disabled = false;
   void refresh(state.kind);
 }
@@ -1453,6 +1487,10 @@ async function bulkApprove(): Promise<void> {
 async function approveSelected(): Promise<void> {
   const pull = selectedPull();
   if (pull == null || dom.approve.disabled) return;
+  if (isOwnPull(pull)) {
+    toast('You can’t approve your own pull request', true);
+    return;
+  }
   dom.approve.disabled = true;
   try {
     await approvePull(pull);
@@ -1461,7 +1499,7 @@ async function approveSelected(): Promise<void> {
   } catch (error) {
     toast(errorMessage(error), true);
   } finally {
-    dom.approve.disabled = false;
+    dom.approve.disabled = isOwnPull(pull);
   }
 }
 
@@ -1502,7 +1540,7 @@ function toggleStyle(): void {
 
 type ReviewMode = 'stacked' | 'side';
 let layoutRef: Layout | null = null;
-let reviewMode: ReviewMode = localStorage.getItem('reviewMode') === 'stacked' ? 'stacked' : 'side';
+const reviewMode: ReviewMode = 'side';
 
 function applyReviewMode(): void {
   const isSide = reviewMode === 'side';
@@ -1510,7 +1548,6 @@ function applyReviewMode(): void {
   diffView.setFlush(isSide);
   if (isSide) dom.inspector.append(dom.diffRoot);
   else dom.bodySplit.insertBefore(dom.diffRoot, dom.bodySplit.querySelector('.resizer[data-resize="inspector"]'));
-  dom.toggleMode.innerHTML = `${isSide ? 'Stacked' : 'Side by side'} <kbd>V</kbd>`;
   const pull = selectedPull();
   if (pull != null) renderDetail(pull);
   layoutRef?.refit();
@@ -1519,19 +1556,8 @@ function applyReviewMode(): void {
 const PRESET_LABELS: Record<LayoutPreset, string> = { review: 'Review', diff: 'Diff focus', read: 'Read description', triage: 'Triage' };
 
 function applyLayoutPreset(preset: LayoutPreset): void {
-  if (reviewMode !== 'side') {
-    reviewMode = 'side';
-    localStorage.setItem('reviewMode', reviewMode);
-    applyReviewMode();
-  }
   layout.applyPreset(preset);
   toast(`Layout: ${PRESET_LABELS[preset]}`);
-}
-
-function toggleReviewMode(): void {
-  reviewMode = reviewMode === 'side' ? 'stacked' : 'side';
-  localStorage.setItem('reviewMode', reviewMode);
-  applyReviewMode();
 }
 
 const layout = new Layout(element('app'), () => syncPaneButtons());
@@ -1677,7 +1703,7 @@ function openThemePicker(): void {
 
 function syncPaneButtons(): void {
   document.getElementById('toggle-sidebar')?.classList.toggle('on', !layout.isHidden('list'));
-  document.getElementById('toggle-inspector')?.classList.toggle('on', !layout.isHidden('inspector'));
+  document.getElementById('toggle-inspector')?.classList.toggle('on', !isFilesCollapsed);
 }
 
 function openHelp(): void {
@@ -1731,13 +1757,12 @@ const COMMANDS: Command[] = [
   { id: 'view-involved', section: 'Views', title: 'Go to Involved', keys: ['⌘2', 'g i'], run: () => switchKind('involved') },
   { id: 'view-mine', section: 'Views', title: 'Go to Created by me', keys: ['⌘3', 'g m'], run: () => switchKind('mine') },
 
-  { id: 'review-mode', section: 'Layout', title: 'Toggle side-by-side (description | diff)', aliases: 'split right panel diff sidebar stacked', keys: ['v', '⌘⇧d'], run: toggleReviewMode },
   { id: 'toggle-sidebar', section: 'Layout', title: 'Toggle pull request list', aliases: 'hide show pane sidebar navigation queue inbox', keys: ['⌘b', '⌘\\'], run: () => layout.toggle('list') },
-  { id: 'layout-review', section: 'Layout', title: 'Layout: review (list 24% · description 36% · diff)', aliases: 'preset pane default balanced', keys: ['⌘⌥1'], run: () => applyLayoutPreset('review') },
-  { id: 'layout-diff', section: 'Layout', title: 'Layout: diff focus (no list · description 26% · diff 74%)', aliases: 'preset pane code wide', keys: ['⌘⌥2'], run: () => applyLayoutPreset('diff') },
-  { id: 'layout-read', section: 'Layout', title: 'Layout: read description (no list · description 62% · diff)', aliases: 'preset pane body middle', keys: ['⌘⌥3'], run: () => applyLayoutPreset('read') },
-  { id: 'layout-triage', section: 'Layout', title: 'Layout: triage (list 50% · description 30% · diff)', aliases: 'preset pane list wide inbox', keys: ['⌘⌥4'], run: () => applyLayoutPreset('triage') },
-  { id: 'toggle-inspector', section: 'Layout', title: 'Toggle details panel', aliases: 'inspector hide show pane properties files', keys: ['⌘i'], run: () => layout.toggle('inspector') },
+  { id: 'layout-review', section: 'Layout', title: 'Layout: review (list 24% · description 36% · diff)', aliases: 'preset pane default balanced', keys: ['1', '⌘⌥1'], run: () => applyLayoutPreset('review') },
+  { id: 'layout-diff', section: 'Layout', title: 'Layout: diff focus (no list · description 26% · diff 74%)', aliases: 'preset pane code wide', keys: ['2', '⌘⌥2'], run: () => applyLayoutPreset('diff') },
+  { id: 'layout-read', section: 'Layout', title: 'Layout: read description (no list · description 62% · diff)', aliases: 'preset pane body middle', keys: ['3', '⌘⌥3'], run: () => applyLayoutPreset('read') },
+  { id: 'layout-triage', section: 'Layout', title: 'Layout: triage (list 50% · description 30% · diff)', aliases: 'preset pane list wide inbox', keys: ['4', '⌘⌥4'], run: () => applyLayoutPreset('triage') },
+  { id: 'toggle-inspector', section: 'Layout', title: 'Toggle file list', aliases: 'inspector hide show pane files tree', keys: ['⌘i'], run: toggleFilesSection },
   { id: 'focus-mode', section: 'Layout', title: 'Focus mode (hide all panels)', aliases: 'zen fullscreen hide panes', keys: ['⌘.', 'z'], run: () => layout.toggleFocus() },
   { id: 'theme', section: 'Layout', title: 'Choose theme', aliases: 'light dark mode appearance color catppuccin dracula tokyo night nord gruvbox github solarized monokai rose pine one dark', keys: ['t', '⌘⇧l'], run: openThemePicker },
   { id: 'reset-layout', section: 'Layout', title: 'Reset layout', aliases: 'panes widths default', keys: ['⌘⇧0'], run: () => layout.reset() },
@@ -1761,7 +1786,7 @@ const COMMANDS: Command[] = [
   { id: 'toggle-all', section: 'Diff', title: 'Collapse / expand all files', aliases: 'fold unfold hide', keys: ['⇧c'], run: toggleAllFiles, isEnabled: hasFiles },
   { id: 'diff-style', section: 'Diff', title: 'Toggle split / unified diff', aliases: 'side by side inline view', keys: ['s', '⌘⌥s'], run: toggleStyle },
 
-  { id: 'approve', section: 'Pull request', title: 'Approve', aliases: 'lgtm review accept', keys: ['a'], run: () => void approveSelected(), isEnabled: hasPull },
+  { id: 'approve', section: 'Pull request', title: 'Approve', aliases: 'lgtm review accept', keys: ['a'], run: () => void approveSelected(), isEnabled: () => { const pull = selectedPull(); return pull != null && !isOwnPull(pull); } },
   { id: 'merge', section: 'Pull request', title: 'Merge (all selected when several are checked)', aliases: 'squash ship land queue', keys: ['⌘↵', 'm'], run: () => void (state.checkedIds.size > 0 ? bulkMerge() : mergeSelected()), isEnabled: () => hasPull() || state.checkedIds.size > 0 },
   { id: 'merge-method', section: 'Pull request', title: 'Cycle merge method', keys: ['⇧m'], run: cycleMergeMethod },
   { id: 'fix-prompt', section: 'Pull request', title: 'Needs attention → copy agent prompt', aliases: 'triage unapproved broken red failing ci conflict agent devin claude codex prompt clipboard review', keys: ['⇧x'], run: openTriage },
@@ -1873,7 +1898,7 @@ dom.filter.addEventListener('input', () => {
 });
 dom.toggleAll.addEventListener('click', toggleAllFiles);
 element('toggle-sidebar').addEventListener('click', () => layout.toggle('list'));
-element('toggle-inspector').addEventListener('click', () => layout.toggle('inspector'));
+element('toggle-inspector').addEventListener('click', toggleFilesSection);
 element('open-palette').addEventListener('click', () => palette.open());
 element('open-help').addEventListener('click', openHelp);
 element('open-github').addEventListener('click', openSelectedOnGitHub);
@@ -1888,7 +1913,6 @@ dom.crumbs.addEventListener('click', (event) => {
   event.preventDefault();
   openSelectedOnGitHub();
 });
-dom.toggleMode.addEventListener('click', toggleReviewMode);
 applyReviewMode();
 enableWindowDrag();
 applyTheme();
@@ -1917,6 +1941,13 @@ window.addEventListener('focus', () => void refresh(state.kind));
 window.setInterval(() => {
   if (document.visibilityState === 'visible') void refresh(state.kind);
 }, QUEUE_REFRESH_MS);
+
+void fetchViewerLogin().then((login) => {
+  viewer = login;
+  const pull = selectedPull();
+  if (pull != null) renderDetailMeta(pull);
+  renderBulkBar();
+});
 
 void isReadinessAvailable().then((isAvailable) => {
   isAiEnabled = isAvailable;

@@ -92,6 +92,13 @@ export function fetchDiff(pull: PullRequest): Promise<string> {
   return invoke<string>('diff', { repo: pull.repository.nameWithOwner, number: pull.number });
 }
 
+let viewerLogin: Promise<string | null> | null = null;
+
+export function fetchViewerLogin(): Promise<string | null> {
+  viewerLogin ??= invoke<string>('viewer').then((login) => (login === '' ? null : login)).catch(() => null);
+  return viewerLogin;
+}
+
 export function approvePull(pull: PullRequest): Promise<string> {
   return invoke<string>('approve', { repo: pull.repository.nameWithOwner, number: pull.number });
 }
