@@ -43,6 +43,10 @@ class Move implements fc.AsyncCommand<Model, Page> {
     await page.keyboard.press(this.delta === 1 ? 'j' : 'k');
     const real = await snapshot(page);
     checkCommon(real);
+    if (real.visibleIds.length === 0) {
+      invariant(real.selectedId === before.selectedId, `${this.toString()} on an empty list changes nothing`);
+      return;
+    }
     const expected = Math.min(real.visibleIds.length - 1, Math.max(0, before.visibleIds.indexOf(before.selectedId ?? '') + this.delta));
     invariant(real.selectedId === real.visibleIds[expected], `${this.toString()} moves the cursor by one, clamped`);
     model.cursor = expected;

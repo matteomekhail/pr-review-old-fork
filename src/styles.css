@@ -742,3 +742,15 @@ button.primary, #pr-head .actions button { transition: background-color .12s lin
 #merge.merge-icon { gap: 6px; padding: 0 9px; }
 #merge.merge-icon kbd { background: rgb(255 255 255 / .16); border-color: transparent; color: rgb(255 255 255 / .9); }
 #merge.merge-icon kbd:first-of-type { margin-left: 2px; }
+#pr-head .actions kbd, #pr-head .head-left kbd, .search kbd, .filter-bar .chip kbd, #bulk-bar kbd, #merge kbd {
+  display: inline-grid; place-items: center; box-sizing: border-box; height: 16px; min-width: 16px; padding: 0 4px; margin: 0;
+  font: 500 10px/1 'Inter Variable', Inter, -apple-system, BlinkMacSystemFont, system-ui, sans-serif; font-feature-settings: 'case' 1;
+}
+#pr-head .actions kbd + kbd, #merge kbd + kbd, .filter-bar .chip kbd + kbd, #bulk-bar kbd + kbd { margin-left: 2px; }
+#pr-head .actions button { line-height: 1; }
+#pr-head .actions button svg { display: block; }
+#open-github kbd { margin-left: 0; }
+#pr-head .actions kbd, #pr-head .head-left kbd, .search kbd, .filter-bar .chip kbd, #bulk-bar kbd, #merge kbd, dialog kbd, #tooltip kbd { text-box: trim-both cap alphabetic; }
+#pr-head .actions button svg { width: 14px; height: 14px; flex: none; }
+#pr-head .actions button { gap: 6px; }
+#open-github { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; }
