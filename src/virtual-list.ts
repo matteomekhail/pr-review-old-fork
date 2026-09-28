@@ -15,6 +15,10 @@ export class VirtualList {
   private readonly window: HTMLElement;
   private renderedRange = '';
   private frame = 0;
+  private readonly highlight: HTMLElement;
+  private highlightedKey: string | null = null;
+  private highlightTop: number | null = null;
+  private highlightHeight = -1;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -25,7 +29,10 @@ export class VirtualList {
     this.spacerBottom.setAttribute('aria-hidden', 'true');
     this.window = document.createElement('div');
     this.window.style.display = 'contents';
-    root.replaceChildren(this.spacerTop, this.window, this.spacerBottom);
+    this.highlight = document.createElement('li');
+    this.highlight.className = 'vl-highlight';
+    this.highlight.setAttribute('aria-hidden', 'true');
+    root.replaceChildren(this.highlight, this.spacerTop, this.window, this.spacerBottom);
     root.addEventListener('scroll', () => this.schedule(), { passive: true });
     new ResizeObserver(() => this.schedule()).observe(root);
   }
@@ -36,6 +43,8 @@ export class VirtualList {
     for (const row of rows) this.offsets.push((this.offsets.at(-1) ?? 0) + row.height);
     this.renderedRange = '';
     this.render();
+    this.highlightTop = null;
+    this.placeHighlight();
   }
 
   refresh(): void {
@@ -65,6 +74,32 @@ export class VirtualList {
 
   element(key: string): HTMLElement | null {
     return this.window.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`);
+  }
+
+  highlightKey(key: string | null): void {
+    this.highlightedKey = key;
+    this.placeHighlight();
+  }
+
+  private placeHighlight(): void {
+    const index = this.highlightedKey == null ? -1 : this.indexOf(this.highlightedKey);
+    if (index < 0) {
+      if (this.highlightTop != null) this.highlight.classList.remove('visible');
+      this.highlightTop = null;
+      return;
+    }
+    const top = this.offsets[index] ?? 0;
+    if (top === this.highlightTop) return;
+    const height = this.rows[index]?.height ?? 0;
+    const isJump = this.highlightTop == null || Math.abs(top - this.highlightTop) > height * 8;
+    if (this.highlight.classList.contains('instant') !== isJump) this.highlight.classList.toggle('instant', isJump);
+    if (this.highlightHeight !== height) {
+      this.highlight.style.height = `${height}px`;
+      this.highlightHeight = height;
+    }
+    this.highlight.style.transform = `translate3d(0, ${top}px, 0)`;
+    if (this.highlightTop == null) this.highlight.classList.add('visible');
+    this.highlightTop = top;
   }
 
   forEachRendered(callback: (element: HTMLElement) => void): void {

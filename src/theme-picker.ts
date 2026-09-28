@@ -1,3 +1,4 @@
+import { closeWithMotion } from './motion';
 import { SYSTEM_THEME_ID, THEMES, type AppTheme } from './themes';
 
 interface ThemePickerHooks {
@@ -91,8 +92,8 @@ export class ThemePicker {
     const entry = this.results[this.activeIndex];
     if (entry == null) return;
     this.isCommitted = true;
-    this.dialog.close();
     this.hooks.commit(entry.id);
+    closeWithMotion(this.dialog);
   }
 
   private readonly handleKey = (event: KeyboardEvent): void => {

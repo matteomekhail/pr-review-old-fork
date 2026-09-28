@@ -1,4 +1,5 @@
 import { attachScrollFade } from './scroll-fade';
+import { animateDialogCancel, flash, setVisibleWithMotion } from './motion';
 import { ATTENTION_META, ATTENTION_ORDER, attentionReasons, buildAgentPrompt, needsAttention, prStatus, type AttentionReason } from './status';
 import { applyThemeColors, SYSTEM_THEME_ID, THEMES, themeById, type AppTheme } from './themes';
 import { ThemePicker } from './theme-picker';
@@ -93,7 +94,7 @@ const state: State = {
   kind: 'mine',
   pulls: [],
   filter: '',
-  smartFilter: (localStorage.getItem('smartFilter') as SmartFilter | null) ?? 'all',
+  smartFilter: ((['all', 'ready', 'attention'] as const).find((filter) => filter === localStorage.getItem('smartFilter')) ?? 'all') as SmartFilter,
   sortOrder: (localStorage.getItem('sortOrder') as SortOrder | null) ?? 'smart',
   checkedIds: new Set<string>(),
   selectedId: null,
@@ -546,6 +547,7 @@ function renderList(): void {
   }
   dom.list.classList.toggle('grouped', isGrouped && groups.length > 0);
   virtualList.setRows(rows);
+  virtualList.highlightKey(state.selectedId);
   document.getElementById('toggle-grouping')?.classList.toggle('active', isGrouped);
   renderCounts();
   renderSmartCounts();
@@ -785,6 +787,7 @@ function syncQueueState(pull: PullRequest): void {
 function renderDetail(pull: PullRequest): void {
   syncQueueState(pull);
   void syncDevinButton(pull);
+  void syncPreviewButton(pull);
   dom.crumbs.innerHTML = `<span class="repo" title="${escapeHtml(pull.repository.nameWithOwner)}">${escapeHtml(repoName(pull))}</span><span class="sep">›</span><a class="cur pr-link" href="${escapeHtml(pull.url)}" title="Open on GitHub  O">#${pull.number}</a>`;
   renderDetailMeta(pull);
   const description = renderDescription(pull);
@@ -896,7 +899,11 @@ function select(pull: PullRequest): Promise<void> {
   state.selectedId = pull.id;
   state.activeFileIndex = -1;
   virtualList.scrollToKey(pull.id);
-  virtualList.forEachRendered((element) => element.classList.toggle('selected', element.dataset.key === pull.id));
+  virtualList.highlightKey(pull.id);
+  virtualList.forEachRendered((element) => {
+    const isSelected = element.dataset.key === pull.id;
+    if (element.classList.contains('selected') !== isSelected) element.classList.toggle('selected', isSelected);
+  });
   const now = performance.now();
   const isRapid = now - lastSelectAt < RAPID_SELECT_MS;
   lastSelectAt = now;
@@ -1290,7 +1297,7 @@ function renderBulkBar(): void {
   const checked = checkedPulls();
   const hasSelection = checked.length > 0;
   syncMergeLabel();
-  dom.bulkBar.hidden = !hasSelection;
+  setVisibleWithMotion(dom.bulkBar, hasSelection);
   dom.list.classList.toggle('selecting', hasSelection);
   if (!hasSelection) return;
   const readyCount = checked.filter(isReady).length;
@@ -1380,6 +1387,16 @@ function selectAllVisible(): void {
 
 function selectReady(): void {
   setChecked(visiblePulls().filter(isReady).map((pull) => pull.id), true);
+}
+
+function selectUnready(): void {
+  const unready = state.pulls.filter(needsAttention);
+  if (unready.length === 0) {
+    toast('Every PR is ready');
+    return;
+  }
+  setChecked(unready.map((pull) => pull.id), true);
+  toast(`Selected ${unready.length} PR${unready.length === 1 ? '' : 's'} that need attention · ⇧X to fix with an agent`);
 }
 
 function clearChecked(): void {
@@ -1650,6 +1667,52 @@ async function findDevinSession(pull: PullRequest): Promise<string | null> {
   return null;
 }
 
+const PREVIEW_HOST_PATTERN = /(?:^|\.)(?:preview\.[a-z0-9-]+\.[a-z]{2,}|vercel\.app|netlify\.app|pages\.dev|workers\.dev|onrender\.com|fly\.dev|up\.railway\.app|herokuapp\.com|amplifyapp\.com|web\.app|firebaseapp\.com|surge\.sh|github\.io)$/i;
+const PREVIEW_WORD_PATTERN = /preview|deploy|staging/i;
+const URL_PATTERN = /https?:\/\/[^\s"'<>)\]]+/gi;
+const IGNORED_PREVIEW_HOSTS = /(?:^|\.)(?:github\.com|githubusercontent\.com|vercel\.com|netlify\.com|devin\.ai|devinenterprise\.com|datadoghq\.com|shields\.io)$/i;
+
+function previewUrlsIn(html: string): string[] {
+  const text = html.replace(/&amp;/g, '&');
+  const urls = [...new Set([...text.matchAll(URL_PATTERN)].map((match) => match[0].replace(/[.,;:!?]+$/, '')))];
+  return urls.filter((url) => {
+    const host = URL.canParse(url) ? new URL(url).hostname : '';
+    if (host === '' || IGNORED_PREVIEW_HOSTS.test(host)) return false;
+    return PREVIEW_HOST_PATTERN.test(host) || (/(?:^|[.-])(?:pr|preview)-?\d+[.-]/i.test(host) && PREVIEW_WORD_PATTERN.test(text));
+  });
+}
+
+async function findPreview(pull: PullRequest): Promise<string | null> {
+  const items = await loadConversation(pull).catch((): ConversationItem[] => []);
+  const fromComments = [...items].reverse().flatMap((item) => previewUrlsIn(item.html));
+  if (fromComments[0] != null) return fromComments[0];
+  const fromBody = previewUrlsIn(await loadBody(pull).catch(() => ''));
+  return fromBody[0] ?? null;
+}
+
+async function syncPreviewButton(pull: PullRequest): Promise<void> {
+  const button = document.getElementById('open-preview') as HTMLButtonElement | null;
+  if (button == null) return;
+  const url = await findPreview(pull);
+  if (selectedPull()?.id !== pull.id) return;
+  button.disabled = url == null;
+  button.dataset.tip = url == null ? 'No preview deployment found' : `Open preview  P\n${url}`;
+}
+
+async function openPreview(): Promise<void> {
+  const pull = selectedPull();
+  if (pull == null) return;
+  const url = await findPreview(pull);
+  if (url == null) {
+    toast(`No preview deployment found on #${pull.number}`, true);
+    return;
+  }
+  await openInBrowser(url).then(
+    () => toast(`Opened preview for #${pull.number}`),
+    (error: unknown) => toast(errorMessage(error), true),
+  );
+}
+
 async function syncDevinButton(pull: PullRequest): Promise<void> {
   const button = document.getElementById('open-devin') as HTMLButtonElement | null;
   if (button == null) return;
@@ -1697,10 +1760,17 @@ function resolvedAppTheme(id: string = themeId): AppTheme {
   return id === SYSTEM_THEME_ID ? fallback : themeById(id) ?? fallback;
 }
 
-function applyTheme(id: string = themeId): void {
+let diffThemeTimer = 0;
+
+function applyTheme(id: string = themeId, diffDelayMs = 0): void {
   const theme = resolvedAppTheme(id);
   applyThemeColors(document.documentElement, theme);
-  diffView.setTheme(theme.mode, theme.diff);
+  window.clearTimeout(diffThemeTimer);
+  if (diffDelayMs <= 0) {
+    diffView.setTheme(theme.mode, theme.diff);
+    return;
+  }
+  diffThemeTimer = window.setTimeout(() => diffView.setTheme(theme.mode, theme.diff), diffDelayMs);
 }
 
 function setTheme(id: string): void {
@@ -1712,7 +1782,7 @@ function setTheme(id: string): void {
 
 const themePicker = new ThemePicker({
   current: () => themeId,
-  preview: (id) => applyTheme(id),
+  preview: (id) => applyTheme(id, 220),
   commit: setTheme,
   cancel: () => applyTheme(),
 });
@@ -1784,6 +1854,7 @@ dom.commentSend.addEventListener('click', () => void submitComment());
 element('comment-cancel').addEventListener('click', closeCommentDialog);
 element('comment-button').addEventListener('click', openCommentDialog);
 element('open-devin').addEventListener('click', () => void openDevinSession());
+element('open-preview').addEventListener('click', () => void openPreview());
 
 function openThemePicker(): void {
   themePicker.open();
@@ -1817,7 +1888,7 @@ const DIFF_SCROLL_COMMANDS: Command[] = [
 const COMMANDS: Command[] = [
   { id: 'palette', allowWhileTyping: true, section: 'General', title: 'Open command menu', keys: ['⌘k', '⌘⇧p'], run: () => palette.open() },
   { id: 'help', section: 'General', title: 'Keyboard shortcuts', keys: ['?', '⌘/'], run: openHelp },
-  { id: 'filter', section: 'General', title: 'Filter pull requests', keys: ['/', '⌘f'], run: () => { dom.filter.focus(); dom.filter.select(); } },
+  { id: 'filter', section: 'General', title: 'Filter pull requests', keys: ['/', '⌘f'], run: () => { dom.filter.focus(); dom.filter.select(); const box = dom.filter.closest<HTMLElement>('.search'); if (box != null) flash(box); } },
   { id: 'refresh', allowWhileTyping: true, section: 'General', title: 'Refresh', keys: ['r', '⌘r'], run: manualRefresh },
 
   { id: 'smart-all', section: 'Filter', title: 'Show all', aliases: 'clear filter', keys: ['⌥0'], run: () => setSmartFilter('all') },
@@ -1836,6 +1907,7 @@ const COMMANDS: Command[] = [
   { id: 'check-up', section: 'Select', title: 'Extend selection up', keys: ['⇧k', '⇧↑'], run: () => extendSelection(-1), isEnabled: hasPull },
   { id: 'check-all', section: 'Select', title: 'Select all visible', keys: ['⌘a'], run: selectAllVisible },
   { id: 'check-ready', section: 'Select', title: 'Select all ready', aliases: 'green approved', keys: ['⇧r'], run: selectReady },
+  { id: 'check-unready', section: 'Select', title: 'Select all unready (conflicts, failing, not approved)', aliases: 'attention broken red yellow fix bulk', keys: ['⇧u'], run: selectUnready },
   { id: 'check-clear', section: 'Select', title: 'Clear selection', keys: ['esc'], run: clearChecked, isEnabled: () => state.checkedIds.size > 0 },
   { id: 'bulk-approve', section: 'Select', title: 'Approve selected', aliases: 'bulk lgtm', keys: ['⇧a'], run: () => void bulkApprove(), isEnabled: () => state.checkedIds.size > 0 },
 
@@ -1858,7 +1930,8 @@ const COMMANDS: Command[] = [
   { id: 'list-first', section: 'Navigate', title: 'First pull request', aliases: 'vim top', keys: ['g g', 'Home'], run: () => jumpPull('first') },
   { id: 'list-last', section: 'Navigate', title: 'Last pull request', aliases: 'vim bottom', keys: ['⇧g', 'End'], run: () => jumpPull('last') },
   { id: 'next-file', section: 'Navigate', title: 'Next file', keys: ['n', ']c', '⌥↓'], run: () => moveFile(1), isEnabled: hasFiles },
-  { id: 'prev-file', section: 'Navigate', title: 'Previous file', keys: ['p', '[c', '⌥↑'], run: () => moveFile(-1), isEnabled: hasFiles },
+  { id: 'prev-file', section: 'Navigate', title: 'Previous file', keys: ['[c', '⌥↑'], run: () => moveFile(-1), isEnabled: hasFiles },
+  { id: 'preview', section: 'Pull request', title: 'Open preview deployment', aliases: 'preview deploy vercel netlify cloudflare pages staging site web', keys: ['p'], run: () => void openPreview(), isEnabled: hasPull },
   { id: 'media', section: 'Navigate', title: 'Open first image / video / HTML preview', aliases: 'lightbox screenshot media picture gif recording', keys: ['i', '⌘⇧i'], run: () => openMedia(0), isEnabled: hasPull },
   { id: 'description', section: 'Navigate', title: 'Jump to description', keys: ['⌘↑'], run: () => diffView.scrollToTop(), isEnabled: hasPull },
   { id: 'devin', section: 'Pull request', title: 'Open Devin session', aliases: 'devin agent session link', keys: ['d'], run: () => void openDevinSession(), isEnabled: hasPull },
@@ -1988,6 +2061,7 @@ element('open-github').addEventListener('click', openSelectedOnGitHub);
 element('refresh-button').addEventListener('click', manualRefresh);
 element('open-triage').addEventListener('click', openTriage);
 document.querySelectorAll<HTMLElement>('.h-scroll').forEach(attachScrollFade);
+animateDialogCancel();
 element('theme-button').addEventListener('click', openThemePicker);
 refreshTicker = window.setInterval(renderRefreshStatus, 5_000);
 void refreshTicker;
@@ -2008,6 +2082,7 @@ dom.filterBar.addEventListener('click', (event) => {
 });
 dom.sort.addEventListener('change', () => setSortOrder(dom.sort.value as SortOrder));
 element('bulk-ready').addEventListener('click', selectReady);
+element('bulk-unready').addEventListener('click', selectUnready);
 element('bulk-clear').addEventListener('click', clearChecked);
 dom.bulkApprove.addEventListener('click', () => void bulkApprove());
 dom.bulkMerge.addEventListener('click', () => void bulkMerge());

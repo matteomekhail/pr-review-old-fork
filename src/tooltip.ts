@@ -43,7 +43,8 @@ export function enableTooltips(): void {
     const below = rect.bottom + 8 + tipRect.height < window.innerHeight;
     const top = below ? rect.bottom + 8 : rect.top - tipRect.height - 8;
     const left = Math.min(window.innerWidth - tipRect.width - 8, Math.max(8, rect.left + rect.width / 2 - tipRect.width / 2));
-    tip.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+    tip.style.setProperty('--tip-x', `${Math.round(left)}px`);
+    tip.style.setProperty('--tip-y', `${Math.round(top)}px`);
   };
 
   const adopt = (element: HTMLElement): void => {

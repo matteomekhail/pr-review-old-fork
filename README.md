@@ -10,6 +10,7 @@ A fast, keyboard-first macOS app for reviewing and merging GitHub pull requests.
 - **Smart filters:** Ready (green, mergeable, no changes requested), Small (≤150 lines), Recent (48h). The Smart sort ranks by readiness.
 - **Jev readiness (optional):** with `OPENROUTER_API_KEY` set, each PR is scored by [Jev](https://openrouter.ai) on review evidence, open concerns, change risk and scope, taken from its description, reviews and comments. Without a key, it falls back to the built-in rules.
 - **Diffs:** [`@pierre/diffs`](https://www.npmjs.com/package/@pierre/diffs), virtualized and syntax-highlighted in web workers. Collapsible files and sticky headers.
+- **Preview:** `P` opens the preview deployment found in bot comments or the body (for example `pr-123.preview.example.com`, Vercel, Netlify, Cloudflare Pages); the header button is disabled when there is none.
 - **Devin:** `D` opens the Devin session linked in the PR body or comments; the header button is disabled when there is none.
 - **Comments:** long comments are capped with a Show more toggle, so scrolling never gets stuck inside one. `C` opens a comment box on the current PR (drafts are kept per PR); `⌘↵` posts it through `gh`.
 - **Layout:** description on the left, diff on the right. Panes resize and hide, and `1`–`3` apply preset proportions.
@@ -78,8 +79,8 @@ Vim motions work the same in every pane; the modifier picks the pane.
 | Area | Keys |
 | --- | --- |
 | Queue | `J`/`K` next/prev · `gg`/`G` first/last · `Space`/`⇧Space` page the middle pane |
-| Files | `N`/`P` or `]c`/`[c` next/prev file · `X` collapse · `⇧C` collapse all · `S` split/unified |
-| Filters | `⇧T` group related work · `⌥1` Ready · `⌥2` Small · `⌥3` Recent · `⌥4` Attention · `⌥5` Tested · `⌥0` All · `⇧S` sort · `⇧X` fix with agent |
+| Files | `N` or `]c`/`[c` next/prev file · `X` collapse · `⇧C` collapse all · `S` split/unified |
+| Filters | `⇧T` group related work · `⌥1` Ready · `⌥4` Unready · `⌥0` All (Small `⌥2`, Recent `⌥3`, Tested `⌥5` via `⌘K`) · `⇧S` sort · `⇧X` fix with agent · `⇧U` select unready · `⇧R` select ready |
 | Select | `⇧V` visual mode (then `J`/`K`) · `E` toggle · `⇧J`/`⇧K` extend · `⇧R` all ready · `⌘A` all · `Esc` clear |
 | Act | `⇧X` copy an agent prompt to fix every PR with conflicts or failing checks (or just the selected ones) · `O` open on GitHub (in Chrome) · `A` approve · `⌘↵` merge (all selected when several are checked) · `⇧A` bulk approve · `⌘↵` bulk merge |
 | Layout | `T` theme picker · `⌘B` PR list · `1` review · `2` diff focus · `3` read description · `⌘.` focus |

@@ -108,7 +108,7 @@ const SCENARIOS: Scenario[] = [
 
 async function runOnce(url: string): Promise<ScenarioResult[]> {
   const browser = await chromium.launch({ executablePath: chromePath(), headless: true, args: ['--disable-gpu-vsync', '--disable-frame-rate-limit'] });
-  const page = await browser.newPage({ viewport: { width: 1480, height: 940 }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: 1480, height: 940 }, deviceScaleFactor: 1, reducedMotion: process.env.BENCH_MOTION === '1' ? 'no-preference' : 'reduce' });
   page.on('pageerror', (error) => console.error('pageerror', error.message));
   await page.addInitScript(() => {
     localStorage.setItem('smartFilter', 'all');

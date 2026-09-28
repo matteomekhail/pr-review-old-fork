@@ -1,4 +1,5 @@
 import { renderKeys, type Command, type CommandRegistry } from './commands';
+import { closeWithMotion, GlidingHighlight } from './motion';
 
 function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
@@ -25,6 +26,7 @@ export class CommandPalette {
   private readonly registry: CommandRegistry;
   private results: Command[] = [];
   private activeIndex = 0;
+  private highlight!: GlidingHighlight;
 
   constructor(registry: CommandRegistry) {
     this.registry = registry;
@@ -34,6 +36,7 @@ export class CommandPalette {
     document.body.append(this.dialog);
     this.input = this.dialog.querySelector('input') as HTMLInputElement;
     this.list = this.dialog.querySelector('.palette-list') as HTMLElement;
+    this.highlight = new GlidingHighlight(this.list, 'palette-glide');
     this.input.addEventListener('input', () => this.render());
     this.input.addEventListener('keydown', this.handleKey);
     this.list.addEventListener('pointermove', (event) => this.hover(event));
@@ -55,7 +58,7 @@ export class CommandPalette {
   }
 
   close(): void {
-    this.dialog.close();
+    closeWithMotion(this.dialog);
   }
 
   private render(): void {
@@ -76,6 +79,7 @@ export class CommandPalette {
       })
       .join('');
     if (this.results.length === 0) this.list.innerHTML = '<div class="palette-empty">No commands</div>';
+    this.highlight.moveTo(this.list.querySelector<HTMLElement>('.palette-row.active'));
   }
 
   private setActive(index: number): void {
@@ -84,6 +88,7 @@ export class CommandPalette {
     const row = this.list.querySelector<HTMLElement>(`[data-index="${this.activeIndex}"]`);
     row?.classList.add('active');
     row?.scrollIntoView({ block: 'nearest' });
+    this.highlight.moveTo(row ?? null);
   }
 
   private run(index: number): void {
