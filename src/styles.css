@@ -672,3 +672,7 @@ diffs-container { --diffs-dark-bg: var(--bg); --diffs-light-bg: var(--bg); }
 .comment-more { display: block; width: 100%; padding: 6px 14px 10px; border: 0; background: none; color: var(--accent); font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; }
 .comment-more:hover { text-decoration: underline; }
 .comment-body pre, .comment-body table { overflow-x: auto; overscroll-behavior-y: auto; }
+#app.mode-side #inspector #diff-root { border-top: 0; }
+.status-summary { display: inline-flex; align-items: center; padding: 0 4px 0 0; }
+.status-summary .status { width: 16px; height: 16px; }
+.status-summary { padding: 0 0 0 4px; }

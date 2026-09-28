@@ -20,7 +20,7 @@
             </nav>
             <button id="refresh-button" class="icon-button refresh-button" title="Refresh  ⌘R"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M13.5 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             <span id="refresh-status" class="refresh-status"></span>
-            <button id="open-palette" class="icon-button" title="Command menu  /"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M3 4.5h10M3 8h10M3 11.5h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+            <button id="open-palette" class="icon-button" title="Command menu  ⌘K"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M3 4.5h10M3 8h10M3 11.5h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
             <button id="open-help" class="icon-button" title="Keyboard shortcuts  ?"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><rect x="1.5" y="4" width="13" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 7h1M7 7h1M10 7h2M4.5 9.5h7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
           </div>
         </header>
@@ -63,16 +63,13 @@
             </div>
             <div class="actions">
               <button id="theme-button" class="ghost icon-action theme-button" title="Theme  T"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor"/></svg><kbd class="icon-kbd">T</kbd></button>
-              <div class="search"><span>⌕</span><input id="filter" title="Filter pull requests  F" placeholder="Filter" spellcheck="false" autocomplete="off" /><kbd>F</kbd></div>
+              <div class="search"><span>⌕</span><input id="filter" title="Filter pull requests  /" placeholder="Filter" spellcheck="false" autocomplete="off" /><kbd>/</kbd></div>
               <button id="toggle-all" class="ghost icon-action" title="Collapse all files  ⇧C"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4.5 2.5 8 6l3.5-3.5M4.5 13.5 8 10l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><kbd class="icon-kbd">⇧</kbd><kbd class="icon-kbd">C</kbd></button>
               <button id="comment-button" class="ghost icon-action" title="Write a comment  C"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><kbd class="icon-kbd">C</kbd></button>
               <button id="approve" class="ghost icon-action" title="Approve  A"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><kbd class="icon-kbd">A</kbd></button>
               <button id="merge" class="primary merge-icon" title="Squash and merge  ⌘↵"></button>
-              <button class="ghost icon-action" id="open-devin" title="Open Devin session  D" disabled><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2.2" fill="currentColor"/><path d="M8 2v2M8 12v2M2 8h2M12 8h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><kbd class="icon-kbd">D</kbd></button>
+              <button class="ghost icon-action" id="open-devin" title="Open Devin session  D" disabled><svg class="devin-logo" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M5.9 1.6 8.3 3v2.8L5.9 7.2 3.5 5.8V3zM11.1 4.6l2.4 1.4v2.8l-2.4 1.4-2.4-1.4V6zM5.9 8.8l2.4 1.4V13l-2.4 1.4L3.5 13v-2.8z"/><path d="M8.2 5.7 8.9 6.2M8.2 10.3 8.9 9.8" stroke="currentColor" stroke-width="1.2"/></svg><kbd class="icon-kbd">D</kbd></button>
               <button class="ghost" id="open-github" title="Open on GitHub  O"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><kbd>O</kbd></button>
-              <button class="ghost icon-action" id="toggle-inspector" title="Toggle file list  ⌘I">
-                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><line x1="10.5" y1="2.5" x2="10.5" y2="13.5" stroke="currentColor"/></svg><kbd class="icon-kbd">⌘I</kbd>
-              </button>
             </div>
           </header>
           <div id="status-bar" class="status-bar h-scroll" data-tauri-drag-region></div>
@@ -82,10 +79,7 @@
             <div id="diff-root"></div>
             <div class="resizer" data-resize="inspector" title="Drag to resize · double-click to reset"></div>
             <aside id="inspector">
-              <section class="file-tree">
-                <div class="section-title" role="button" tabindex="-1" title="Collapse / expand files  ⇧F"><span class="files-label"><span class="caret">›</span>Files</span><span id="file-count" class="muted"></span></div>
-                <nav id="files"></nav>
-              </section>
+              <nav id="files" hidden></nav><span id="file-count" hidden></span>
             </aside>
           </div>
         </section>

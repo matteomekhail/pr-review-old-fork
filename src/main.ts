@@ -752,34 +752,15 @@ function chip(content: string, title: string, className = ''): string {
   return `<span class="chip-meta ${className}" title="${escapeHtml(title)}">${content}</span>`;
 }
 
-function toneChip({ label, tone: toneName }: { label: string; tone: string }, title: string): string {
-  return chip(`<i class="dot-${toneName}"></i>${escapeHtml(label)}`, title, `tone-${toneName}`);
-}
-
-function readinessChip(pull: PullRequest): string {
-  if (!isAiEnabled) return '';
-  const result = aiResults.get(aiKey(pull));
-  if (result == null) return chip(aiPending.has(aiKey(pull)) ? '<span class="spinner"></span>Readiness' : 'Readiness —', 'Readiness');
-  const percent = Math.round(Math.max(0, Math.min(1, result.score)) * 100);
-  const toneName = percent >= 65 ? 'ok' : percent >= 40 ? 'wait' : 'bad';
-  const detail = `Readiness ${percent}% · ${result.reason}\nevidence ${Math.round(result.evidence * 100)} · e2e tested ${Math.round(result.tested * 100)} · open concerns ${Math.round(result.blocker * 100)} · risk ${Math.round(result.risk * 100)} · scope ${Math.round(result.scope * 100)}`;
-  return chip(`<b>${percent}</b><span class="reason">${escapeHtml(result.reason)}</span>`, detail, `readiness tone-${toneName}`);
-}
-
 function renderDetailMeta(pull: PullRequest): void {
   const checks = checksLabel(pull);
   const review = reviewLabel(pull);
   const merge = mergeState(pull);
+  const summary = [merge.label, review.tone === 'muted' ? '' : review.label, checks.tone === 'muted' ? '' : `Checks ${checks.label.toLowerCase()}`].filter((part) => part !== '').join(' · ');
   dom.statusBar.innerHTML = [
-    readinessChip(pull),
-    toneChip(merge, `Merge status: ${merge.label}`),
-    review.tone === 'muted' ? '' : toneChip(review, `Review: ${review.label}`),
-    checks.tone === 'muted' ? '' : toneChip(checks, `Checks: ${checks.label}`),
-    '<span class="meta-sep"></span>',
     chip(`${avatar(pull)}${escapeHtml(pull.author?.login ?? 'ghost')}`, 'Author', 'plain'),
     chip(`<code>${escapeHtml(pull.headRefName)}</code><span class="arrow">→</span><code>${escapeHtml(pull.baseRefName)}</code>`, `${pull.headRefName} → ${pull.baseRefName}`, 'plain branch'),
-    chip(`<i class="add">+${pull.additions}</i><i class="del">−${pull.deletions}</i>`, `${pull.changedFiles} files changed`, 'plain delta'),
-    chip(relativeTime(pull.updatedAt), `Updated ${relativeTime(pull.updatedAt)} ago`, 'plain muted-chip'),
+    `<span class="status-summary" title="${escapeHtml(summary)}">${statusIcon(pull)}</span>`,
   ].join('');
   dom.merge.disabled = pull.isDraft || pull.mergeable === 'CONFLICTING' || pull.queueEntry != null;
   const isOwn = isOwnPull(pull);
@@ -855,21 +836,6 @@ function fileLabel(file: ParsedFile): string {
   const slash = file.diff.name.lastIndexOf('/');
   const directory = slash >= 0 ? file.diff.name.slice(0, slash + 1) : '';
   return `<span class="base">${escapeHtml(file.diff.name.slice(slash + 1))}</span><span class="dir">${escapeHtml(directory)}</span>`;
-}
-
-let isFilesCollapsed = localStorage.getItem('filesCollapsed') === '1';
-
-function applyFilesCollapsed(): void {
-  document.querySelector('.file-tree')?.classList.toggle('collapsed', isFilesCollapsed);
-  const title = document.querySelector('.file-tree .section-title');
-  title?.setAttribute('aria-expanded', String(!isFilesCollapsed));
-}
-
-function toggleFilesSection(): void {
-  isFilesCollapsed = !isFilesCollapsed;
-  localStorage.setItem('filesCollapsed', isFilesCollapsed ? '1' : '0');
-  applyFilesCollapsed();
-  document.getElementById('toggle-inspector')?.classList.toggle('on', !isFilesCollapsed);
 }
 
 function renderFiles(files: ParsedFile[]): void {
@@ -1575,7 +1541,7 @@ function applyReviewMode(): void {
   layoutRef?.refit();
 }
 
-const PRESET_LABELS: Record<LayoutPreset, string> = { review: 'Review', diff: 'Diff focus', read: 'Read description', triage: 'Triage' };
+const PRESET_LABELS: Record<LayoutPreset, string> = { review: 'Review', diff: 'Diff focus', read: 'Read description' };
 
 function applyLayoutPreset(preset: LayoutPreset): void {
   layout.applyPreset(preset);
@@ -1825,7 +1791,6 @@ function openThemePicker(): void {
 
 function syncPaneButtons(): void {
   document.getElementById('toggle-sidebar')?.classList.toggle('on', !layout.isHidden('list'));
-  document.getElementById('toggle-inspector')?.classList.toggle('on', !isFilesCollapsed);
 }
 
 function openHelp(): void {
@@ -1847,13 +1812,12 @@ const VIM_COMMANDS = vimCommands();
 
 const DIFF_SCROLL_COMMANDS: Command[] = [
   { id: 'diff-scroll-down', section: 'Diff', title: 'Scroll diff down', aliases: 'vim line', keys: ['⌘j'], run: () => diffView.scrollBy(DIFF_LINE_PX * 2), isEnabled: hasPull },
-  { id: 'diff-scroll-up', section: 'Diff', title: 'Scroll diff up', aliases: 'vim line', keys: ['⌘k'], run: () => diffView.scrollBy(-DIFF_LINE_PX * 2), isEnabled: hasPull },
 ];
 
 const COMMANDS: Command[] = [
-  { id: 'palette', allowWhileTyping: true, section: 'General', title: 'Open command menu', keys: ['/', '⌘⇧p'], run: () => palette.open() },
+  { id: 'palette', allowWhileTyping: true, section: 'General', title: 'Open command menu', keys: ['⌘k', '⌘⇧p'], run: () => palette.open() },
   { id: 'help', section: 'General', title: 'Keyboard shortcuts', keys: ['?', '⌘/'], run: openHelp },
-  { id: 'filter', section: 'General', title: 'Filter pull requests', keys: ['f', '⌘f'], run: () => dom.filter.focus() },
+  { id: 'filter', section: 'General', title: 'Filter pull requests', keys: ['/', '⌘f'], run: () => { dom.filter.focus(); dom.filter.select(); } },
   { id: 'refresh', allowWhileTyping: true, section: 'General', title: 'Refresh', keys: ['r', '⌘r'], run: manualRefresh },
 
   { id: 'smart-all', section: 'Filter', title: 'Show all', aliases: 'clear filter', keys: ['⌥0'], run: () => setSmartFilter('all') },
@@ -1881,10 +1845,8 @@ const COMMANDS: Command[] = [
 
   { id: 'toggle-sidebar', section: 'Layout', title: 'Toggle pull request list', aliases: 'hide show pane sidebar navigation queue inbox', keys: ['⌘b', '⌘\\'], run: () => layout.toggle('list') },
   { id: 'layout-review', section: 'Layout', title: 'Layout: review (list 24% · description 36% · diff)', aliases: 'preset pane default balanced', keys: ['1', '⌘⌥1'], run: () => applyLayoutPreset('review') },
-  { id: 'layout-diff', section: 'Layout', title: 'Layout: diff focus (no list · description 26% · diff 74%)', aliases: 'preset pane code wide', keys: ['2', '⌘⌥2'], run: () => applyLayoutPreset('diff') },
-  { id: 'layout-read', section: 'Layout', title: 'Layout: read description (no list · description 62% · diff)', aliases: 'preset pane body middle', keys: ['3', '⌘⌥3'], run: () => applyLayoutPreset('read') },
-  { id: 'layout-triage', section: 'Layout', title: 'Layout: triage (list 50% · description 30% · diff)', aliases: 'preset pane list wide inbox', keys: ['4', '⌘⌥4'], run: () => applyLayoutPreset('triage') },
-  { id: 'toggle-inspector', section: 'Layout', title: 'Toggle file list', aliases: 'inspector hide show pane files tree', keys: ['⌘i'], run: toggleFilesSection },
+  { id: 'layout-diff', section: 'Layout', title: 'Layout: diff focus (list minimal · description 26% · diff)', aliases: 'preset pane code wide', keys: ['2', '⌘⌥2'], run: () => applyLayoutPreset('diff') },
+  { id: 'layout-read', section: 'Layout', title: 'Layout: read description (list minimal · description 62% · diff)', aliases: 'preset pane body middle', keys: ['3', '⌘⌥3'], run: () => applyLayoutPreset('read') },
   { id: 'focus-mode', section: 'Layout', title: 'Focus mode (hide all panels)', aliases: 'zen fullscreen hide panes', keys: ['⌘.', 'z'], run: () => layout.toggleFocus() },
   { id: 'theme', section: 'Layout', title: 'Choose theme', aliases: 'light dark mode appearance color catppuccin dracula tokyo night nord gruvbox github solarized monokai rose pine one dark', keys: ['t', '⌘⇧l'], run: openThemePicker },
   { id: 'reset-layout', section: 'Layout', title: 'Reset layout', aliases: 'panes widths default', keys: ['⌘⇧0'], run: () => layout.reset() },
@@ -1905,7 +1867,6 @@ const COMMANDS: Command[] = [
   ...DIFF_SCROLL_COMMANDS,
   { id: 'toggle-file', section: 'Diff', title: 'Collapse / expand file', aliases: 'fold unfold hide', keys: ['x'], run: toggleCurrentFile, isEnabled: hasFiles },
   { id: 'toggle-bots', section: 'Pull request', title: 'Show / hide bot comments', aliases: 'devin perry github-actions automated comments conversation', keys: ['⇧b'], run: () => { showBotComments = !showBotComments; localStorage.setItem('showBotComments', showBotComments ? '1' : '0'); const pull = selectedPull(); if (pull != null) renderDetail(pull); toast(showBotComments ? 'Showing bot comments' : 'Hiding bot comments'); } },
-  { id: 'toggle-files', section: 'Diff', title: 'Collapse / expand file list', aliases: 'files tree sidebar hide', keys: ['⇧f'], run: toggleFilesSection },
   { id: 'toggle-all', section: 'Diff', title: 'Collapse / expand all files', aliases: 'fold unfold hide', keys: ['⇧c'], run: toggleAllFiles, isEnabled: hasFiles },
   { id: 'diff-style', section: 'Diff', title: 'Toggle split / unified diff', aliases: 'side by side inline view', keys: ['s', '⌘⌥s'], run: toggleStyle },
 
@@ -2021,7 +1982,6 @@ dom.filter.addEventListener('input', () => {
 });
 dom.toggleAll.addEventListener('click', toggleAllFiles);
 element('toggle-sidebar').addEventListener('click', () => layout.toggle('list'));
-element('toggle-inspector').addEventListener('click', toggleFilesSection);
 element('open-palette').addEventListener('click', () => palette.open());
 element('open-help').addEventListener('click', openHelp);
 element('open-github').addEventListener('click', openSelectedOnGitHub);
@@ -2039,11 +1999,9 @@ dom.crumbs.addEventListener('click', (event) => {
 applyReviewMode();
 enableWindowDrag();
 applyTheme();
-applyFilesCollapsed();
 enableTooltips();
 routeLinksToBrowser(openInBrowser, (message) => toast(message, true));
 systemDark.addEventListener('change', () => themeId === SYSTEM_THEME_ID && applyTheme());
-document.querySelector('.file-tree .section-title')?.addEventListener('click', toggleFilesSection);
 dom.filterBar.addEventListener('click', (event) => {
   const chip = (event.target as HTMLElement).closest<HTMLElement>('[data-smart]');
   if (chip != null) setSmartFilter(chip.dataset.smart as SmartFilter);

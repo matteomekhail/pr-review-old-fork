@@ -1,5 +1,5 @@
 export type PaneId = 'list' | 'inspector' | 'description';
-export type LayoutPreset = 'review' | 'diff' | 'read' | 'triage';
+export type LayoutPreset = 'review' | 'diff' | 'read';
 
 interface PaneSpec {
   variable: string;
@@ -85,16 +85,15 @@ export class Layout {
 
   applyPreset(preset: LayoutPreset): void {
     const total = this.root.clientWidth;
-    const plans: Record<LayoutPreset, { list: number | null; description: number | null }> = {
+    const plans: Record<LayoutPreset, { list: number | 'min'; description: number }> = {
       review: { list: 0.24, description: 0.36 },
-      diff: { list: null, description: 0.26 },
-      read: { list: null, description: 0.62 },
-      triage: { list: 0.5, description: 0.3 },
+      diff: { list: 'min', description: 0.26 },
+      read: { list: 'min', description: 0.62 },
     };
     const plan = plans[preset];
-    this.state.hidden = { list: plan.list == null, inspector: false, description: plan.description == null };
-    if (plan.list != null) this.state.widths.list = Math.max(PANES.list.minWidth, Math.round(total * plan.list));
-    if (plan.description != null) this.state.widths.description = Math.max(PANES.description.minWidth, Math.round(total * plan.description));
+    this.state.hidden = { list: false, inspector: false, description: false };
+    this.state.widths.list = plan.list === 'min' ? PANES.list.minWidth : Math.max(PANES.list.minWidth, Math.round(total * plan.list));
+    this.state.widths.description = Math.max(PANES.description.minWidth, Math.round(total * plan.description));
     this.commit();
   }
 
