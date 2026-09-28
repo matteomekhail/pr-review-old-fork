@@ -1,5 +1,6 @@
 export interface Command {
   id: string;
+  allowWhileTyping?: boolean;
   title: string;
   section: string;
   keys: string[];
@@ -89,9 +90,8 @@ export class CommandRegistry {
   handle(event: KeyboardEvent, isTyping: boolean): boolean {
     if (isTyping && isTextEditingChord(event)) return false;
     const command = this.commands.find((candidate) => {
-      const isGlobal = candidate.keys.some((shortcut) => shortcut.includes('⌘') || shortcut.includes('⌃'));
-      if (isTyping && !isGlobal) return false;
-      return (this.chords.get(candidate) ?? []).some((chord) => matches(chord, event));
+      if (isTyping && candidate.allowWhileTyping !== true) return false;
+      return (this.chords.get(candidate) ?? []).some((chord) => matches(chord, event) && (!isTyping || chord.meta || chord.ctrl));
     });
     if (command == null || command.isEnabled?.() === false) return false;
     event.preventDefault();

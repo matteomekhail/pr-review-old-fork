@@ -455,10 +455,29 @@ function renderList(): void {
   renderCounts();
   renderSmartCounts();
   renderBulkBar();
-  if (pulls.length > 0) return;
+  syncDetailVisibility(pulls);
+}
+
+let pendingAutoSelect = 0;
+
+function syncDetailVisibility(pulls: PullRequest[]): void {
+  const hasSelection = state.selectedId != null && state.pulls.some((pull) => pull.id === state.selectedId);
+  if (hasSelection) {
+    dom.pr.hidden = false;
+    dom.empty.hidden = true;
+    return;
+  }
+  const first = pulls[0];
+  if (first != null) {
+    cancelAnimationFrame(pendingAutoSelect);
+    pendingAutoSelect = requestAnimationFrame(() => {
+      if (state.selectedId == null || !state.pulls.some((pull) => pull.id === state.selectedId)) void select(first);
+    });
+    return;
+  }
   dom.pr.hidden = true;
   dom.empty.hidden = false;
-  dom.empty.textContent = state.pulls.length === 0 ? 'No pull requests here.' : 'No matches.';
+  dom.empty.textContent = state.pulls.length === 0 ? 'No pull requests here.' : pulls.length === 0 ? 'No matches.' : 'Select a pull request';
 }
 
 function mergeState(pull: PullRequest): { label: string; tone: string } {
@@ -1409,10 +1428,10 @@ const DIFF_SCROLL_COMMANDS: Command[] = [
 ];
 
 const COMMANDS: Command[] = [
-  { id: 'palette', section: 'General', title: 'Open command menu', keys: ['/', '⌘⇧p'], run: () => palette.open() },
+  { id: 'palette', allowWhileTyping: true, section: 'General', title: 'Open command menu', keys: ['/', '⌘⇧p'], run: () => palette.open() },
   { id: 'help', section: 'General', title: 'Keyboard shortcuts', keys: ['?', '⌘/'], run: openHelp },
   { id: 'filter', section: 'General', title: 'Filter pull requests', keys: ['f', '⌘f'], run: () => dom.filter.focus() },
-  { id: 'refresh', section: 'General', title: 'Refresh', keys: ['r', '⌘r'], run: manualRefresh },
+  { id: 'refresh', allowWhileTyping: true, section: 'General', title: 'Refresh', keys: ['r', '⌘r'], run: manualRefresh },
 
   { id: 'smart-all', section: 'Filter', title: 'Show all', aliases: 'clear filter', keys: ['⌥0'], run: () => setSmartFilter('all') },
   { id: 'smart-ready', section: 'Filter', title: 'Show ready to merge', aliases: 'green approved mergeable', keys: ['⌥1'], run: () => setSmartFilter('ready') },
@@ -1505,7 +1524,7 @@ function handleSequence(event: KeyboardEvent): boolean {
 document.addEventListener('keydown', (event) => {
   if ((event.isComposing && !event.altKey) || lightbox.isOpen || palette.isOpen || dom.confirm.open || dom.help.open || dom.bulkConfirm.open) return;
   const target = event.target;
-  const isTyping = target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement;
+  const isTyping = target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable);
   if (isTyping && (event.key === 'Escape' || (event.key === 'Enter' && !event.metaKey))) {
     (target as HTMLElement).blur();
     event.preventDefault();
