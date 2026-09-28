@@ -1,3 +1,4 @@
+import { attachScrollFade } from './scroll-fade';
 import { ATTENTION_META, ATTENTION_ORDER, attentionReasons, buildAgentPrompt, needsAttention, prStatus, type AttentionReason } from './status';
 import { applyThemeColors, SYSTEM_THEME_ID, THEMES, themeById, type AppTheme } from './themes';
 import { ThemePicker } from './theme-picker';
@@ -7,7 +8,7 @@ import { DiffView, parseDiff, type DiffStyle, type ParsedFile } from './diffs';
 import { sanitizeHtml } from './sanitize';
 import { CommandRegistry, renderShortcut, type Command } from './commands';
 import { CommandPalette } from './palette';
-import { Layout } from './layout';
+import { Layout, type LayoutPreset } from './layout';
 import { Lightbox, collectMedia } from './lightbox';
 import { enableWindowDrag } from './window-drag';
 import { enableTooltips } from './tooltip';
@@ -1515,6 +1516,18 @@ function applyReviewMode(): void {
   layoutRef?.refit();
 }
 
+const PRESET_LABELS: Record<LayoutPreset, string> = { review: 'Review', diff: 'Diff focus', read: 'Read description', triage: 'Triage' };
+
+function applyLayoutPreset(preset: LayoutPreset): void {
+  if (reviewMode !== 'side') {
+    reviewMode = 'side';
+    localStorage.setItem('reviewMode', reviewMode);
+    applyReviewMode();
+  }
+  layout.applyPreset(preset);
+  toast(`Layout: ${PRESET_LABELS[preset]}`);
+}
+
 function toggleReviewMode(): void {
   reviewMode = reviewMode === 'side' ? 'stacked' : 'side';
   localStorage.setItem('reviewMode', reviewMode);
@@ -1663,7 +1676,7 @@ function openThemePicker(): void {
 }
 
 function syncPaneButtons(): void {
-  document.getElementById('toggle-sidebar')?.classList.toggle('on', !layout.isHidden('sidebar'));
+  document.getElementById('toggle-sidebar')?.classList.toggle('on', !layout.isHidden('list'));
   document.getElementById('toggle-inspector')?.classList.toggle('on', !layout.isHidden('inspector'));
 }
 
@@ -1719,8 +1732,11 @@ const COMMANDS: Command[] = [
   { id: 'view-mine', section: 'Views', title: 'Go to Created by me', keys: ['⌘3', 'g m'], run: () => switchKind('mine') },
 
   { id: 'review-mode', section: 'Layout', title: 'Toggle side-by-side (description | diff)', aliases: 'split right panel diff sidebar stacked', keys: ['v', '⌘⇧d'], run: toggleReviewMode },
-  { id: 'toggle-sidebar', section: 'Layout', title: 'Toggle sidebar', aliases: 'hide show pane navigation', keys: ['⌘b', '⌘\\'], run: () => layout.toggle('sidebar') },
-  { id: 'toggle-list', section: 'Layout', title: 'Toggle pull request list', aliases: 'hide show pane queue inbox', keys: ['⌘⇧b', '⌘⇧\\'], run: () => layout.toggle('list') },
+  { id: 'toggle-sidebar', section: 'Layout', title: 'Toggle pull request list', aliases: 'hide show pane sidebar navigation queue inbox', keys: ['⌘b', '⌘\\'], run: () => layout.toggle('list') },
+  { id: 'layout-review', section: 'Layout', title: 'Layout: review (list 24% · description 36% · diff)', aliases: 'preset pane default balanced', keys: ['⌘⌥1'], run: () => applyLayoutPreset('review') },
+  { id: 'layout-diff', section: 'Layout', title: 'Layout: diff focus (no list · description 26% · diff 74%)', aliases: 'preset pane code wide', keys: ['⌘⌥2'], run: () => applyLayoutPreset('diff') },
+  { id: 'layout-read', section: 'Layout', title: 'Layout: read description (no list · description 62% · diff)', aliases: 'preset pane body middle', keys: ['⌘⌥3'], run: () => applyLayoutPreset('read') },
+  { id: 'layout-triage', section: 'Layout', title: 'Layout: triage (list 50% · description 30% · diff)', aliases: 'preset pane list wide inbox', keys: ['⌘⌥4'], run: () => applyLayoutPreset('triage') },
   { id: 'toggle-inspector', section: 'Layout', title: 'Toggle details panel', aliases: 'inspector hide show pane properties files', keys: ['⌘i'], run: () => layout.toggle('inspector') },
   { id: 'focus-mode', section: 'Layout', title: 'Focus mode (hide all panels)', aliases: 'zen fullscreen hide panes', keys: ['⌘.', 'z'], run: () => layout.toggleFocus() },
   { id: 'theme', section: 'Layout', title: 'Choose theme', aliases: 'light dark mode appearance color catppuccin dracula tokyo night nord gruvbox github solarized monokai rose pine one dark', keys: ['t', '⌘⇧l'], run: openThemePicker },
@@ -1856,13 +1872,14 @@ dom.filter.addEventListener('input', () => {
   scheduleSemanticSearch();
 });
 dom.toggleAll.addEventListener('click', toggleAllFiles);
-element('toggle-sidebar').addEventListener('click', () => layout.toggle('sidebar'));
+element('toggle-sidebar').addEventListener('click', () => layout.toggle('list'));
 element('toggle-inspector').addEventListener('click', () => layout.toggle('inspector'));
 element('open-palette').addEventListener('click', () => palette.open());
 element('open-help').addEventListener('click', openHelp);
 element('open-github').addEventListener('click', openSelectedOnGitHub);
 element('refresh-button').addEventListener('click', manualRefresh);
 element('open-triage').addEventListener('click', openTriage);
+document.querySelectorAll<HTMLElement>('.h-scroll').forEach(attachScrollFade);
 element('theme-button').addEventListener('click', openThemePicker);
 refreshTicker = window.setInterval(renderRefreshStatus, 5_000);
 void refreshTicker;

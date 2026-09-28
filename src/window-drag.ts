@@ -1,6 +1,6 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
-const DRAG_ZONES = '#pr-head, .pane-head, .status-bar, .titlebar-spacer, #sidebar .workspace, #empty';
+const DRAG_ZONES = '#pr-head, .pane-head, .status-bar, .titlebar-spacer, #empty';
 const INTERACTIVE = 'button, a, input, select, textarea, label, [role=checkbox], [role=separator], .chip, .chip-meta, .resizer, kbd, code, img';
 
 function isDragTarget(target: EventTarget | null): boolean {

@@ -116,6 +116,18 @@ export class Lightbox {
     this.render();
   }
 
+  private scrollOrStep(delta: 1 | -1): void {
+    const stage = this.stage;
+    const max = stage.scrollHeight - stage.clientHeight;
+    const canScroll = delta > 0 ? stage.scrollTop < max - 1 : stage.scrollTop > 1;
+    if (max > 1 && canScroll) {
+      stage.scrollBy({ top: delta * Math.round(stage.clientHeight * 0.4), behavior: 'smooth' });
+      return;
+    }
+    this.step(delta);
+    if (delta < 0 && this.stage.scrollHeight > this.stage.clientHeight) this.stage.scrollTop = this.stage.scrollHeight;
+  }
+
   private step(delta: number): void {
     if (this.items.length < 2) return;
     this.index = (this.index + delta + this.items.length) % this.items.length;
@@ -182,14 +194,14 @@ export class Lightbox {
     const ctrlHandlers: Record<string, () => void> = { d: () => this.step(half), u: () => this.step(-half), f: () => this.jump(this.items.length - 1), b: () => this.jump(0) };
     const handlers: Record<string, () => void> = {
       ArrowRight: () => this.step(1),
-      ArrowDown: () => this.step(1),
+      ArrowDown: () => this.scrollOrStep(1),
       l: () => this.step(1),
-      j: () => this.step(1),
+      j: () => this.scrollOrStep(1),
       n: () => this.step(1),
       ArrowLeft: () => this.step(-1),
-      ArrowUp: () => this.step(-1),
+      ArrowUp: () => this.scrollOrStep(-1),
       h: () => this.step(-1),
-      k: () => this.step(-1),
+      k: () => this.scrollOrStep(-1),
       p: () => this.step(-1),
       G: () => this.jump(this.items.length - 1),
       Home: () => this.jump(0),

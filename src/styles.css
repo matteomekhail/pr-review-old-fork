@@ -42,7 +42,7 @@ i.del, .del { color: var(--del); font-style: normal; }
 .drag-region { -webkit-app-region: drag; }
 .drag-region button, .drag-region input, .drag-region select, .drag-region a { -webkit-app-region: no-drag; }
 
-#app { --sidebar-w: 220px; --list-w: 420px; --inspector-w: 272px; display: flex; height: 100vh; }
+#app { --list-w: 440px; --inspector-w: 272px; display: flex; height: 100vh; }
 #sidebar { width: var(--sidebar-w); flex: none; }
 #list-pane { width: var(--list-w); flex: none; }
 #detail { flex: 1; min-width: 0; }
@@ -478,9 +478,9 @@ img { -webkit-user-drag: none; }
 
 :root { --titlebar-h: 44px; --traffic-lights-w: 78px; }
 .titlebar-spacer { height: var(--titlebar-h); flex: none; margin: 0 -8px; border-bottom: 1px solid var(--border-soft); }
-#app.hide-sidebar .pane-head { padding-left: calc(var(--traffic-lights-w) + 8px); }
-#app.hide-sidebar.hide-list #pr-head { padding-left: calc(var(--traffic-lights-w) + 8px); }
-#app.hide-sidebar.hide-list #empty { padding-top: var(--titlebar-h); }
+#list-pane .pane-head { padding-left: calc(var(--traffic-lights-w) + 4px); }
+#app.hide-list #pr-head { padding-left: calc(var(--traffic-lights-w) + 8px); }
+#app.hide-list #empty { padding-top: var(--titlebar-h); }
 #pr-head .actions button.ghost, #pr-head .actions button.primary, .split-button select { height: 26px; }
 #pr-head .icon-button { width: 26px; height: 26px; }
 .search { height: 26px; }
@@ -566,20 +566,6 @@ button, .chip, .file, #pr-list li { touch-action: manipulation; }
 .triage-section .bulk-list li { grid-template-columns: 16px auto 1fr auto; }
 .triage-section .age { color: var(--text-4); font-size: 11.5px; }
 .triage-section:has(input:not(:checked)) .bulk-list { opacity: .4; }
-.filter-bar { flex-wrap: wrap; row-gap: 6px; overflow-x: visible; }
-#toggle-grouping.active, :root[data-theme=light] #toggle-grouping.active { color: var(--text); border-color: #33353b; background: var(--bg-active); }
-.ai-status.on, .ai-status.busy { color: var(--text-2); border-color: var(--border); }
-.ai-status.on::before, .ai-status.busy::before { background: var(--ok); }
-.status-bar { height: auto; min-height: 40px; flex-wrap: wrap; row-gap: 6px; padding-top: 7px; padding-bottom: 7px; overflow: visible; white-space: normal; }
-.chip-meta { height: auto; min-height: 24px; padding-top: 3px; padding-bottom: 3px; line-height: 16px; flex: 0 1 auto; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
-.chip-meta.readiness .reason { max-width: none; white-space: normal; overflow: visible; }
-.chip-meta.branch { flex-wrap: wrap; row-gap: 2px; }
-.chip-meta.branch code { white-space: nowrap; max-width: 100%; }
-.chip-meta.branch code:last-of-type { flex: 0 1 auto; }
-.chip-meta.plain, .chip-meta.delta, .chip-meta.muted-chip { white-space: nowrap; flex: none; }
-.meta-sep { align-self: center; }
-.chip { height: auto; min-height: 24px; padding-top: 3px; padding-bottom: 3px; line-height: 16px; white-space: normal; max-width: 100%; text-align: left; }
-.chip kbd, .chip .chip-count, .chip .dot, .chip svg { flex: none; }
 
 ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
 ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-4) 45%, transparent); background-clip: content-box; }
@@ -617,3 +603,31 @@ diffs-container { --diffs-dark-bg: var(--bg); --diffs-light-bg: var(--bg); }
 .theme-option .current { color: var(--ok); font-size: 12px; width: 12px; flex: none; }
 #theme-picker footer { display: flex; gap: 14px; padding: 8px 14px; border-top: 1px solid var(--border); color: var(--text-4); font-size: 11.5px; }
 #theme-picker footer kbd { margin: 0 3px 0 0; }
+
+.h-scroll { overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap; white-space: nowrap; scrollbar-width: none; overscroll-behavior-x: contain; --fade: 28px; }
+.h-scroll::-webkit-scrollbar { display: none; }
+.h-scroll[data-fade=end] { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - var(--fade)), transparent); }
+.h-scroll[data-fade=start] { -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--fade)); mask-image: linear-gradient(90deg, transparent, #000 var(--fade)); }
+.h-scroll[data-fade=both] { -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(90deg, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent); }
+.h-scroll > * { flex: none; }
+.filter-bar.h-scroll { flex-wrap: nowrap; }
+.status-bar.h-scroll { height: 40px; }
+.status-bar .chip-meta.readiness .reason { max-width: 280px; }
+.status-bar .chip-meta.branch, .status-bar .chip-meta.branch code, .status-bar .chip-meta.branch code:last-of-type { flex: none; max-width: none; overflow: visible; }
+#pr-head .actions { flex: 0 1 auto; min-width: 0; }
+#pr-head .actions .search { flex: 0 1 200px; min-width: 96px; }
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+#list-pane .pane-head .head-title { gap: 6px; min-width: 0; flex: 1; }
+#list-pane .pane-head .logo { width: 20px; height: 20px; margin: 0 2px 0 0; flex: none; border-radius: 5px; }
+.view-pills { display: flex; gap: 2px; min-width: 0; flex: 0 1 auto; -webkit-app-region: no-drag; }
+.view-pills button { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border: 0; border-radius: 999px; background: none; color: var(--text-3); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.view-pills button:hover { background: var(--bg-hover); color: var(--text-2); }
+.view-pills button.active { background: var(--bg-active); color: var(--text); }
+.view-pills .count { margin: 0; color: var(--text-4); font-size: 11px; font-variant-numeric: tabular-nums; }
+.view-pills button.active .count { color: var(--text-3); }
+.filter-bar { padding-top: 6px; padding-bottom: 6px; gap: 3px; }
+.filter-bar .chip { height: 22px; min-height: 22px; padding: 0 8px; font-size: 11.5px; }
+.filter-bar .sort { height: 22px; }
+#list-pane .pane-head .icon-button { width: 24px; height: 24px; }
+#list-pane .pane-head .refresh-status:not(.active) { display: none; }

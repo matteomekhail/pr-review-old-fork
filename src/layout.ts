@@ -1,4 +1,5 @@
-export type PaneId = 'sidebar' | 'list' | 'inspector' | 'description';
+export type PaneId = 'list' | 'inspector' | 'description';
+export type LayoutPreset = 'review' | 'diff' | 'read' | 'triage';
 
 interface PaneSpec {
   variable: string;
@@ -12,13 +13,12 @@ interface LayoutState {
   hidden: Record<PaneId, boolean>;
 }
 
-const STORAGE_KEY = 'layout.v2';
+const STORAGE_KEY = 'layout.v3';
 const MIN_CONTENT_WIDTH = 320;
 const KEYBOARD_STEP = 24;
 
 const PANES: Record<PaneId, PaneSpec> = {
-  sidebar: { variable: '--sidebar-w', defaultWidth: 220, minWidth: 160, side: 'left' },
-  list: { variable: '--list-w', defaultWidth: 420, minWidth: 240, side: 'left' },
+  list: { variable: '--list-w', defaultWidth: 440, minWidth: 260, side: 'left' },
   inspector: { variable: '--inspector-w', defaultWidth: 300, minWidth: 220, side: 'right' },
   description: { variable: '--desc-w', defaultWidth: 520, minWidth: 260, side: 'left' },
 };
@@ -27,8 +27,8 @@ const PANE_IDS = Object.keys(PANES) as PaneId[];
 
 function defaultState(): LayoutState {
   return {
-    widths: { sidebar: PANES.sidebar.defaultWidth, list: PANES.list.defaultWidth, inspector: PANES.inspector.defaultWidth, description: PANES.description.defaultWidth },
-    hidden: { sidebar: false, list: false, inspector: false, description: false },
+    widths: { list: PANES.list.defaultWidth, inspector: PANES.inspector.defaultWidth, description: PANES.description.defaultWidth },
+    hidden: { list: false, inspector: false, description: false },
   };
 }
 
@@ -69,7 +69,7 @@ export class Layout {
   }
 
   isFocused(): boolean {
-    return (['sidebar', 'list', 'inspector'] as const).every((pane) => this.state.hidden[pane]);
+    return (['list', 'inspector'] as const).every((pane) => this.state.hidden[pane]);
   }
 
   toggle(pane: PaneId): void {
@@ -79,7 +79,22 @@ export class Layout {
 
   toggleFocus(): void {
     const shouldHide = !this.isFocused();
-    (['sidebar', 'list', 'inspector'] as const).forEach((pane) => (this.state.hidden[pane] = shouldHide));
+    (['list', 'inspector'] as const).forEach((pane) => (this.state.hidden[pane] = shouldHide));
+    this.commit();
+  }
+
+  applyPreset(preset: LayoutPreset): void {
+    const total = this.root.clientWidth;
+    const plans: Record<LayoutPreset, { list: number | null; description: number | null }> = {
+      review: { list: 0.24, description: 0.36 },
+      diff: { list: null, description: 0.26 },
+      read: { list: null, description: 0.62 },
+      triage: { list: 0.5, description: 0.3 },
+    };
+    const plan = plans[preset];
+    this.state.hidden = { list: plan.list == null, inspector: false, description: plan.description == null };
+    if (plan.list != null) this.state.widths.list = Math.max(PANES.list.minWidth, Math.round(total * plan.list));
+    if (plan.description != null) this.state.widths.description = Math.max(PANES.description.minWidth, Math.round(total * plan.description));
     this.commit();
   }
 
@@ -93,7 +108,7 @@ export class Layout {
   }
 
   private row(): PaneId[] {
-    return this.root.classList.contains('mode-side') ? ['sidebar', 'list', 'description'] : ['sidebar', 'list', 'inspector'];
+    return this.root.classList.contains('mode-side') ? ['list', 'description'] : ['list', 'inspector'];
   }
 
   private visibleRow(): PaneId[] {
