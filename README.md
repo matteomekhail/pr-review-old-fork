@@ -79,7 +79,7 @@ Vim motions work the same in every pane; the modifier picks the pane.
 | Files | `N`/`P` or `]c`/`[c` next/prev file · `X` collapse · `⇧C` collapse all · `⇧F` hide file list · `S` split/unified |
 | Filters | `⇧T` group related work · `⌥1` Ready · `⌥2` Small · `⌥3` Recent · `⌥4` Attention · `⌥5` Tested · `⌥0` All · `⇧S` sort · `⇧X` fix with agent |
 | Select | `⇧V` visual mode (then `J`/`K`) · `E` toggle · `⇧J`/`⇧K` extend · `⇧R` all ready · `⌘A` all · `Esc` clear |
-| Act | `⇧X` copy an agent prompt to fix every PR with conflicts or failing checks (or just the selected ones) · `O` open on GitHub (in Chrome) · `A` approve · `⌘↵` merge (all selected when several are checked) · `⇧A` bulk approve · `⌘⇧↵` bulk merge |
+| Act | `⇧X` copy an agent prompt to fix every PR with conflicts or failing checks (or just the selected ones) · `O` open on GitHub (in Chrome) · `A` approve · `⌘↵` merge (all selected when several are checked) · `⇧A` bulk approve · `⌘↵` bulk merge |
 | Layout | `T` theme picker · `V` side by side · `⌘\` sidebar · `⌘⇧\` list · `⌘I` details · `⌘.` focus |
 | Lightbox | `I` open first media · `H`/`L` or `J`/`K` or `←`/`→` cycle · `gg`/`G` first/last · `⌃D`/`⌃U` skip half · `Z` zoom · `O` open · `Q`/`Esc` close |
 | General | `/` commands · `?` shortcuts · `F` filter · `R` refresh |

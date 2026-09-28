@@ -111,7 +111,7 @@ syncMergeLabel();
 function syncMergeLabel(): void {
   const selectedCount = state.checkedIds.size;
   const baseLabel = isSelectedQueued ? 'Merge when ready' : MERGE_LABELS[dom.mergeMethod.value as MergeMethod];
-  const label = selectedCount > 1 ? `${isSelectedQueued ? 'Queue' : 'Merge'} ${selectedCount} selected` : baseLabel;
+  const label = selectedCount > 0 ? `${isSelectedQueued ? 'Queue' : 'Merge'} ${selectedCount} selected` : baseLabel;
   dom.merge.innerHTML = `${label} <kbd>⌘</kbd><kbd>↵</kbd>`;
   dom.merge.title = isSelectedQueued ? 'Add to merge queue  ⌘↵' : 'Merge  ⌘↵';
   dom.mergeMethod.hidden = isSelectedQueued;
@@ -1337,7 +1337,7 @@ function toggleVisualMode(): void {
   visualAnchorId = state.selectedId;
   dom.list.classList.add('visual');
   setChecked([state.selectedId], true);
-  toast('Visual mode: J/K to extend, ⌘⇧↵ merge, ⇧A approve, Esc to exit');
+  toast('Visual mode: J/K to extend, ⌘↵ merge, ⇧A approve, Esc to exit');
 }
 
 function syncVisualRange(): void {
@@ -1713,7 +1713,6 @@ const COMMANDS: Command[] = [
   { id: 'check-ready', section: 'Select', title: 'Select all ready', aliases: 'green approved', keys: ['⇧r'], run: selectReady },
   { id: 'check-clear', section: 'Select', title: 'Clear selection', keys: ['esc'], run: clearChecked, isEnabled: () => state.checkedIds.size > 0 },
   { id: 'bulk-approve', section: 'Select', title: 'Approve selected', aliases: 'bulk lgtm', keys: ['⇧a'], run: () => void bulkApprove(), isEnabled: () => state.checkedIds.size > 0 },
-  { id: 'bulk-merge', section: 'Select', title: 'Merge selected…', aliases: 'bulk squash ship', keys: ['⌘⇧↵'], run: () => void bulkMerge(), isEnabled: () => state.checkedIds.size > 0 },
 
   { id: 'view-review', section: 'Views', title: 'Go to Review requested', keys: ['⌘1', 'g r'], run: () => switchKind('review') },
   { id: 'view-involved', section: 'Views', title: 'Go to Involved', keys: ['⌘2', 'g i'], run: () => switchKind('involved') },
@@ -1747,7 +1746,7 @@ const COMMANDS: Command[] = [
   { id: 'diff-style', section: 'Diff', title: 'Toggle split / unified diff', aliases: 'side by side inline view', keys: ['s', '⌘⌥s'], run: toggleStyle },
 
   { id: 'approve', section: 'Pull request', title: 'Approve', aliases: 'lgtm review accept', keys: ['a'], run: () => void approveSelected(), isEnabled: hasPull },
-  { id: 'merge', section: 'Pull request', title: 'Merge (all selected when several are checked)', aliases: 'squash ship land queue', keys: ['⌘↵', 'm'], run: () => void (state.checkedIds.size > 1 ? bulkMerge() : mergeSelected()), isEnabled: hasPull },
+  { id: 'merge', section: 'Pull request', title: 'Merge (all selected when several are checked)', aliases: 'squash ship land queue', keys: ['⌘↵', 'm'], run: () => void (state.checkedIds.size > 0 ? bulkMerge() : mergeSelected()), isEnabled: () => hasPull() || state.checkedIds.size > 0 },
   { id: 'merge-method', section: 'Pull request', title: 'Cycle merge method', keys: ['⇧m'], run: cycleMergeMethod },
   { id: 'fix-prompt', section: 'Pull request', title: 'Needs attention → copy agent prompt', aliases: 'triage unapproved broken red failing ci conflict agent devin claude codex prompt clipboard review', keys: ['⇧x'], run: openTriage },
   { id: 'open', section: 'Pull request', title: 'Open on GitHub', aliases: 'browser link url web', keys: ['o', '⌘o', 'g o'], run: openSelectedOnGitHub, isEnabled: hasPull },
@@ -1892,7 +1891,7 @@ dom.bulkApprove.addEventListener('click', () => void bulkApprove());
 dom.bulkMerge.addEventListener('click', () => void bulkMerge());
 syncPaneButtons();
 dom.approve.addEventListener('click', () => void approveSelected());
-dom.merge.addEventListener('click', () => void (state.checkedIds.size > 1 ? bulkMerge() : mergeSelected()));
+dom.merge.addEventListener('click', () => void (state.checkedIds.size > 0 ? bulkMerge() : mergeSelected()));
 dom.mergeMethod.addEventListener('change', () => {
   localStorage.setItem('mergeMethod', dom.mergeMethod.value);
   syncMergeLabel();
