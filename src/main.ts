@@ -72,6 +72,10 @@ const dom = {
   bulkMerge: element<HTMLButtonElement>('bulk-merge'),
   bulkApprove: element<HTMLButtonElement>('bulk-approve'),
   bulkConfirm: element<HTMLDialogElement>('bulk-confirm'),
+  triage: element<HTMLDialogElement>('triage'),
+  triageTitle: element('triage-title'),
+  triageSections: element('triage-sections'),
+  triageCopy: element<HTMLButtonElement>('triage-copy'),
   bulkConfirmTitle: element('bulk-confirm-title'),
   bulkConfirmList: element('bulk-confirm-list'),
   bulkConfirmNote: element('bulk-confirm-note'),
@@ -280,7 +284,7 @@ function computeLists(): void {
   listCacheKey = key;
   const needle = state.filter.trim().toLowerCase();
   const now = Date.now();
-  const matching = state.pulls.filter((pull) => matchesSmartFilter(pull, state.smartFilter, now) && matchesText(pull, needle));
+  const matching = state.pulls.filter((pull) => (state.smartFilter === 'attention' ? needsAttention(pull) : state.smartFilter === 'tested' ? isTested(pull) : matchesSmartFilter(pull, state.smartFilter, now)) && matchesText(pull, needle));
   filteredCache = sortPulls(matching, state.sortOrder, now, aiScoreFor);
   visibleCache = !isGrouped || groups.length === 0 ? filteredCache : listSections(filteredCache).flatMap((section) => (section.group != null && collapsedGroups.has(section.group.id) ? [] : section.pulls));
 }
@@ -296,16 +300,20 @@ function visiblePulls(): PullRequest[] {
 }
 
 let smartCountsSource: PullRequest[] | null = null;
+let lastStatesVersion = -1;
 
 function renderSmartCounts(): void {
-  if (smartCountsSource === state.pulls && dom.sort.value === state.sortOrder && dom.filterBar.querySelector('.chip.active')?.getAttribute('data-smart') === state.smartFilter) return;
+  if (smartCountsSource === state.pulls && lastStatesVersion === listVersion && dom.sort.value === state.sortOrder && dom.filterBar.querySelector('.chip.active')?.getAttribute('data-smart') === state.smartFilter) return;
   smartCountsSource = state.pulls;
+  lastStatesVersion = listVersion;
   const now = Date.now();
   const counts: Record<SmartFilter, number> = {
     all: state.pulls.length,
     ready: state.pulls.filter(isReady).length,
     small: state.pulls.filter(isSmall).length,
     recent: state.pulls.filter((pull) => isRecent(pull, now)).length,
+    attention: state.pulls.filter(needsAttention).length,
+    tested: state.pulls.filter(isTested).length,
   };
   dom.filterBar.querySelectorAll<HTMLElement>('[data-smart-count]').forEach((badge) => (badge.textContent = String(counts[badge.dataset.smartCount as SmartFilter])));
   dom.filterBar.querySelectorAll<HTMLElement>('[data-smart]').forEach((chip) => chip.classList.toggle('active', chip.dataset.smart === state.smartFilter));
@@ -337,11 +345,13 @@ function queueLabel(pull: PullRequest): string {
 
 function statusIcon(pull: PullRequest): string {
   if (pull.queueEntry != null) return `<span class="status queued" title="${escapeHtml(queueLabel(pull))}"></span>`;
+  if (pull.mergeable === 'CONFLICTING' || pull.mergeStateStatus === 'DIRTY') return '<span class="status blocked" title="Conflicts"></span>';
+  if (pull.reviewDecision === 'CHANGES_REQUESTED') return '<span class="status blocked" title="Changes requested"></span>';
+  if (pull.checkState === 'FAILURE' || pull.checkState === 'ERROR') return '<span class="status blocked" title="Checks failing"></span>';
+  if (pull.reviewDecision === 'APPROVED' && pull.mergeStateStatus === 'BLOCKED') return '<span class="status blocked" title="Blocked"></span>';
   if (pull.isDraft) return '<span class="status draft" title="Draft"></span>';
-  if (pull.mergeable === 'CONFLICTING') return '<span class="status conflict" title="Conflicts"></span>';
   if (pull.reviewDecision === 'APPROVED') return '<span class="status approved" title="Approved"></span>';
-  if (pull.reviewDecision === 'CHANGES_REQUESTED') return '<span class="status changes" title="Changes requested"></span>';
-  return '<span class="status open" title="Open"></span>';
+  return '<span class="status pending" title="Not approved"></span>';
 }
 
 function checksIcon(pull: PullRequest): string {
@@ -574,7 +584,7 @@ function mergeState(pull: PullRequest): { label: string; tone: string } {
     case 'HAS_HOOKS':
       return { label: 'Ready', tone: 'ok' };
     case 'UNSTABLE':
-      return { label: 'Checks failing', tone: 'wait' };
+      return { label: 'Checks failing', tone: 'bad' };
     case 'BLOCKED':
       return { label: 'Blocked', tone: 'bad' };
     case 'BEHIND':
@@ -593,7 +603,7 @@ function reviewLabel(pull: PullRequest): { label: string; tone: string } {
     case 'REVIEW_REQUIRED':
       return { label: 'Review required', tone: 'wait' };
     case null:
-      return { label: 'None', tone: 'muted' };
+      return { label: 'Not approved', tone: 'wait' };
     default:
       return pull.reviewDecision satisfies never;
   }
@@ -610,7 +620,7 @@ function checksLabel(pull: PullRequest): { label: string; tone: string } {
     case 'EXPECTED':
       return { label: 'Running', tone: 'wait' };
     case null:
-      return { label: 'None', tone: 'muted' };
+      return { label: 'Not approved', tone: 'wait' };
     default:
       return pull.checkState satisfies never;
   }
@@ -730,7 +740,7 @@ function readinessChip(pull: PullRequest): string {
   if (result == null) return chip(aiPending.has(aiKey(pull)) ? '<span class="spinner"></span>Readiness' : 'Readiness —', 'Readiness');
   const percent = Math.round(Math.max(0, Math.min(1, result.score)) * 100);
   const toneName = percent >= 65 ? 'ok' : percent >= 40 ? 'wait' : 'bad';
-  const detail = `Readiness ${percent}% · ${result.reason}\nevidence ${Math.round(result.evidence * 100)} · open concerns ${Math.round(result.blocker * 100)} · risk ${Math.round(result.risk * 100)} · scope ${Math.round(result.scope * 100)}`;
+  const detail = `Readiness ${percent}% · ${result.reason}\nevidence ${Math.round(result.evidence * 100)} · e2e tested ${Math.round(result.tested * 100)} · open concerns ${Math.round(result.blocker * 100)} · risk ${Math.round(result.risk * 100)} · scope ${Math.round(result.scope * 100)}`;
   return chip(`<b>${percent}</b><span class="reason">${escapeHtml(result.reason)}</span>`, detail, `readiness tone-${toneName}`);
 }
 
@@ -1032,7 +1042,7 @@ function toggleAllFiles(): void {
 const mergeStateCache = new Map<string, { updatedAt: string; state: MergeState }>();
 
 const AI_CONCURRENCY = 4;
-const AI_CACHE_KEY = 'jevReadiness.v1';
+const AI_CACHE_KEY = 'jevReadiness.v2';
 const aiResults = new Map<string, ReadinessResult>(Object.entries(JSON.parse(localStorage.getItem(AI_CACHE_KEY) ?? '{}') as Record<string, ReadinessResult>));
 const aiPending = new Set<string>();
 let isAiEnabled = false;
@@ -1093,6 +1103,7 @@ async function scoreWithJev(pulls: PullRequest[]): Promise<void> {
       try {
         aiResults.set(key, await assessReadiness(pull));
         invalidateList();
+        smartCountsSource = null;
       } catch (error) {
         console.warn('jev readiness failed', pull.number, errorMessage(error));
       } finally {
@@ -1542,50 +1553,106 @@ function cycleMergeMethod(): void {
   toast(`Merge method: ${MERGE_LABELS[next]}`);
 }
 
-type BrokenReason = 'conflicts' | 'failing checks';
+type AttentionReason = 'conflicts' | 'failing checks' | 'changes requested' | 'blocked' | 'not approved';
 
-function brokenReasons(pull: PullRequest): BrokenReason[] {
-  const reasons: BrokenReason[] = [];
+const ATTENTION_ORDER: readonly AttentionReason[] = ['conflicts', 'failing checks', 'changes requested', 'blocked', 'not approved'];
+
+const ATTENTION_META: Record<AttentionReason, { title: string; tone: 'bad' | 'wait'; task: string }> = {
+  conflicts: { title: 'Merge conflicts', tone: 'bad', task: 'merge or rebase onto the base branch as the repo prefers, resolve every conflict keeping the intent of both sides, and make sure it builds' },
+  'failing checks': { title: 'Failing checks', tone: 'bad', task: 'run `gh pr checks <url>`, read the failing logs (`gh run view <run-id> --log-failed`), and fix the root cause in code; never skip, disable or loosen tests or lint' },
+  'changes requested': { title: 'Changes requested', tone: 'bad', task: 'read every review and unresolved thread (`gh pr view <url> --comments`), address each requested change in code, reply on each thread with what changed, and re-request review' },
+  blocked: { title: 'Blocked by branch rules', tone: 'bad', task: 'find what branch protection still requires (`gh pr view <url> --json mergeStateStatus,reviewDecision,statusCheckRollup`) and resolve it, or report exactly what a human must do' },
+  'not approved': { title: 'Not approved', tone: 'wait', task: 'read the PR and all review comments, address anything unresolved, make sure checks pass, then request review from the suggested reviewers (`gh pr edit <url> --add-reviewer`); never self-approve' },
+};
+
+function attentionReasons(pull: PullRequest): AttentionReason[] {
+  const reasons: AttentionReason[] = [];
   if (pull.mergeable === 'CONFLICTING' || pull.mergeStateStatus === 'DIRTY') reasons.push('conflicts');
   if (pull.checkState === 'FAILURE' || pull.checkState === 'ERROR') reasons.push('failing checks');
+  if (pull.reviewDecision === 'CHANGES_REQUESTED') reasons.push('changes requested');
+  else if (pull.reviewDecision !== 'APPROVED') reasons.push('not approved');
+  else if (pull.mergeStateStatus === 'BLOCKED' && reasons.length === 0) reasons.push('blocked');
   return reasons;
 }
 
-function buildFixPrompt(pulls: PullRequest[]): string {
+const TESTED_THRESHOLD = 0.75;
+
+function isTested(pull: PullRequest): boolean {
+  return (aiResults.get(aiKey(pull))?.tested ?? 0) >= TESTED_THRESHOLD;
+}
+
+function needsAttention(pull: PullRequest): boolean {
+  return pull.queueEntry == null && !pull.isDraft && attentionReasons(pull).length > 0;
+}
+
+function buildAgentPrompt(pulls: PullRequest[], included: ReadonlySet<AttentionReason>): string {
   const lines = pulls.map((pull) => {
-    const reasons = brokenReasons(pull).join(' + ');
+    const reasons = attentionReasons(pull).filter((reason) => included.has(reason)).join(' + ');
     return `- ${pull.url}\n  repo: ${pull.repository.nameWithOwner} · branch: ${pull.headRefName} → ${pull.baseRefName} · problem: ${reasons}\n  title: ${pull.title}`;
   });
+  const tasks = ATTENTION_ORDER.filter((reason) => included.has(reason)).map((reason) => `- ${ATTENTION_META[reason].title}: ${ATTENTION_META[reason].task}.`);
   return [
-    `Fix these ${pulls.length} open pull request${pulls.length === 1 ? '' : 's'} so each one is green and mergeable again.`,
+    `Get these ${pulls.length} open pull request${pulls.length === 1 ? '' : 's'} to green, approved and mergeable.`,
     '',
     ...lines,
     '',
-    'For each pull request:',
-    '1. Check out its head branch (`gh pr checkout <url>`), and pull the latest base branch.',
-    '2. Merge conflicts: merge or rebase onto the base branch as the repo prefers, resolve every conflict keeping the intent of both sides, and make sure it builds.',
-    '3. Failing checks: run `gh pr checks <url>`, open the failing job logs (`gh run view <run-id> --log-failed`), find the root cause, and fix it in the code. Do not skip, disable or loosen tests or lint rules to get green.',
-    '4. Run the relevant tests, typecheck and lint locally before pushing.',
-    '5. Push to the same branch without force-pushing unless a rebase requires it, then re-check `gh pr checks <url>` until it passes.',
+    'For each pull request, check out its head branch (`gh pr checkout <url>`), pull the latest base branch, then handle each listed problem:',
+    ...tasks,
     '',
-    'Work through them one at a time. When done, report each PR with what was wrong, what you changed, and its final check status. If one cannot be fixed without a product decision, stop on that PR and explain why instead of guessing.',
+    'Run the relevant tests, typecheck and lint locally before pushing. Push to the same branch without force-pushing unless a rebase requires it, then re-check `gh pr checks <url>` until it passes.',
+    '',
+    'Work through them one at a time. When done, report each PR with what was wrong, what you changed, and its final status. If one needs a product decision or a human reviewer, stop on that PR and say exactly what is needed instead of guessing.',
   ].join('\n');
 }
 
-function copyFixPrompt(): void {
+let triagePulls: PullRequest[] = [];
+
+function triageIncluded(): Set<AttentionReason> {
+  return new Set(ATTENTION_ORDER.filter((reason) => dom.triage.querySelector<HTMLInputElement>(`input[data-reason="${reason}"]`)?.checked ?? true));
+}
+
+function triageTargets(included: ReadonlySet<AttentionReason>): PullRequest[] {
+  return triagePulls.filter((pull) => attentionReasons(pull).some((reason) => included.has(reason)));
+}
+
+function renderTriageSummary(): void {
+  const count = triageTargets(triageIncluded()).length;
+  dom.triageCopy.disabled = count === 0;
+  dom.triageCopy.firstChild!.textContent = `Copy prompt for ${count} PR${count === 1 ? '' : 's'} `;
+}
+
+function openTriage(): void {
   const scope = state.checkedIds.size > 0 ? checkedPulls() : state.pulls;
-  const broken = scope.filter((pull) => brokenReasons(pull).length > 0);
-  if (broken.length === 0) {
-    toast(state.checkedIds.size > 0 ? 'No conflicts or failing checks in the selection' : 'No PRs with conflicts or failing checks');
+  triagePulls = scope.filter(needsAttention);
+  if (triagePulls.length === 0) {
+    toast(state.checkedIds.size > 0 ? 'Nothing in the selection needs attention' : 'Every PR is approved, green and conflict-free');
     return;
   }
-  const conflicts = broken.filter((pull) => brokenReasons(pull).includes('conflicts')).length;
-  const failing = broken.filter((pull) => brokenReasons(pull).includes('failing checks')).length;
-  void navigator.clipboard.writeText(buildFixPrompt(broken)).then(
-    () => toast(`Copied fix prompt for ${broken.length} PR${broken.length === 1 ? '' : 's'} · ${conflicts} conflicted · ${failing} failing`),
+  dom.triageTitle.textContent = `${triagePulls.length} PR${triagePulls.length === 1 ? '' : 's'} need attention${state.checkedIds.size > 0 ? ' in selection' : ''}`;
+  dom.triageSections.innerHTML = ATTENTION_ORDER.map((reason) => {
+    const pulls = triagePulls.filter((pull) => attentionReasons(pull).includes(reason));
+    if (pulls.length === 0) return '';
+    const meta = ATTENTION_META[reason];
+    const rows = pulls.map((pull) => `<li>${statusIcon(pull)}<span class="id">#${pull.number}</span><span class="t">${escapeHtml(pull.title)}</span><span class="age">${relativeTime(pull.updatedAt)}</span></li>`).join('');
+    return `<section class="triage-section tone-${meta.tone}"><label class="triage-head"><input type="checkbox" data-reason="${reason}" checked /><i class="triage-dot"></i><span>${meta.title}</span><span class="triage-count">${pulls.length}</span></label><ol class="bulk-list">${rows}</ol></section>`;
+  }).join('');
+  renderTriageSummary();
+  dom.triage.returnValue = '';
+  dom.triage.showModal();
+  dom.triageCopy.focus();
+}
+
+dom.triage.addEventListener('change', renderTriageSummary);
+dom.triage.addEventListener('close', () => {
+  if (dom.triage.returnValue !== 'copy') return;
+  const included = triageIncluded();
+  const targets = triageTargets(included);
+  if (targets.length === 0) return;
+  void navigator.clipboard.writeText(buildAgentPrompt(targets, included)).then(
+    () => toast(`Copied agent prompt for ${targets.length} PR${targets.length === 1 ? '' : 's'} · paste it into your agent`),
     () => toast('Clipboard unavailable', true),
   );
-}
+});
 
 function openSelectedOnGitHub(): void {
   const pull = selectedPull();
@@ -1662,6 +1729,8 @@ const COMMANDS: Command[] = [
   { id: 'smart-ready', section: 'Filter', title: 'Show ready to merge', aliases: 'green approved mergeable', keys: ['⌥1'], run: () => setSmartFilter('ready') },
   { id: 'smart-small', section: 'Filter', title: 'Show small diffs', aliases: 'tiny quick', keys: ['⌥2'], run: () => setSmartFilter('small') },
   { id: 'smart-recent', section: 'Filter', title: 'Show recently updated', aliases: 'new fresh', keys: ['⌥3'], run: () => setSmartFilter('recent') },
+  { id: 'smart-tested', section: 'Filter', title: 'Show end-to-end tested', aliases: 'e2e verified qa proof screenshots recording', keys: ['⌥5'], run: () => setSmartFilter('tested') },
+  { id: 'smart-attention', section: 'Filter', title: 'Show PRs that need attention', aliases: 'unapproved conflicts failing blocked red yellow triage', keys: ['⌥4'], run: () => setSmartFilter('attention') },
   { id: 'group', section: 'Filter', title: 'Group related work', aliases: 'cluster effort category batch smart group', keys: ['t'], run: toggleGrouping },
   { id: 'regroup', section: 'Filter', title: 'Regroup', aliases: 'refresh groups cluster', keys: [], run: () => { groupsSignature = ''; localStorage.removeItem(GROUPS_CACHE_KEY); void ensureGroups(true); } },
   { id: 'sort', section: 'Filter', title: 'Cycle sort (smart / updated / smallest)', aliases: 'order', keys: ['⇧s'], run: cycleSortOrder },
@@ -1710,7 +1779,7 @@ const COMMANDS: Command[] = [
   { id: 'approve', section: 'Pull request', title: 'Approve', aliases: 'lgtm review accept', keys: ['a'], run: () => void approveSelected(), isEnabled: hasPull },
   { id: 'merge', section: 'Pull request', title: 'Merge (all selected when several are checked)', aliases: 'squash ship land queue', keys: ['⌘↵', 'm'], run: () => void (state.checkedIds.size > 1 ? bulkMerge() : mergeSelected()), isEnabled: hasPull },
   { id: 'merge-method', section: 'Pull request', title: 'Cycle merge method', keys: ['⇧m'], run: cycleMergeMethod },
-  { id: 'fix-prompt', section: 'Pull request', title: 'Copy agent prompt to fix conflicts and failing checks', aliases: 'broken red failing ci conflict agent devin claude codex prompt clipboard', keys: ['⇧x'], run: copyFixPrompt },
+  { id: 'fix-prompt', section: 'Pull request', title: 'Needs attention → copy agent prompt', aliases: 'triage unapproved broken red failing ci conflict agent devin claude codex prompt clipboard review', keys: ['⇧x'], run: openTriage },
   { id: 'open', section: 'Pull request', title: 'Open on GitHub', aliases: 'browser link url web', keys: ['o', '⌘o', 'g o'], run: openSelectedOnGitHub, isEnabled: hasPull },
   { id: 'copy-url', section: 'Pull request', title: 'Copy link', keys: ['⌘⇧c', 'y'], run: () => { const pull = selectedPull(); if (pull != null) copyText(pull.url, 'link'); }, isEnabled: hasPull },
   { id: 'copy-branch', section: 'Pull request', title: 'Copy branch name', keys: ['⌘⇧.', 'b'], run: () => { const pull = selectedPull(); if (pull != null) copyText(pull.headRefName, 'branch'); }, isEnabled: hasPull },
@@ -1748,7 +1817,7 @@ function handleSequence(event: KeyboardEvent): boolean {
 }
 
 document.addEventListener('keydown', (event) => {
-  if ((event.isComposing && !event.altKey) || lightbox.isOpen || palette.isOpen || dom.confirm.open || dom.help.open || dom.bulkConfirm.open) return;
+  if ((event.isComposing && !event.altKey) || lightbox.isOpen || palette.isOpen || dom.confirm.open || dom.help.open || dom.bulkConfirm.open || dom.triage.open) return;
   const target = event.target;
   const isTyping = target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable);
   if (isTyping && (event.key === 'Escape' || (event.key === 'Enter' && !event.metaKey))) {
@@ -1824,6 +1893,7 @@ element('open-palette').addEventListener('click', () => palette.open());
 element('open-help').addEventListener('click', openHelp);
 element('open-github').addEventListener('click', openSelectedOnGitHub);
 element('refresh-button').addEventListener('click', manualRefresh);
+element('open-triage').addEventListener('click', openTriage);
 refreshTicker = window.setInterval(renderRefreshStatus, 5_000);
 void refreshTicker;
 dom.crumbs.addEventListener('click', (event) => {

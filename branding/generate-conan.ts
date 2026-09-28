@@ -2,23 +2,25 @@ const KEY = process.env.OPENROUTER_API_KEY;
 if (KEY == null || KEY === '') throw new Error('OPENROUTER_API_KEY missing');
 const DIR = '/tmp/pr-review/branding';
 const base = await Bun.file(`${DIR}/grok-prompt.txt`).text();
-const source = Buffer.from(await Bun.file(`${DIR}/grok-d--gemini-3-pro-image.png`).arrayBuffer()).toString('base64');
+const source = Buffer.from(await Bun.file(`${DIR}/conan-c--gpt-5.4-image-2.png`).arrayBuffer()).toString('base64');
 const addendum = `
 
-[이번 변환의 추가 지시 — 위 규격보다 우선하지 않되, 캐릭터 특징으로 적용]
+[이번 변환의 추가 지시 — 캐릭터 특징으로 적용]
 
-변환 대상은 첨부한 흰색 둥근 봇이다. 흰색 얼굴과 둥근 실루엣은 유지한다.
+변환 대상은 명탐정 코난(에도가와 코난)이다. 첨부 이미지는 구도·방향·눈의 참고용이다.
 
-1. 방향: 캐릭터는 반드시 화면 왼쪽 아래에서 오른쪽 위를 향해 들여다본다. 머리의 왼쪽과 아래쪽 가장자리가 화면 밖으로 잘리고, 오른쪽 위에 짙은 배경 여백이 남는다. 머리를 시계 방향으로 15~20도 기울여 화면 왼쪽 눈이 오른쪽 눈보다 높다. 첨부 이미지와 좌우가 반대인 구도다.
-2. 모자: 기존의 보라색 체크 모자를 버리고, 일본 애니메이션 풍의 아주 귀여운 탐정 모자(디어스토커)로 바꾼다. 따뜻한 캐러멜·초콜릿 브라운 계열, 둥글고 통통한 크라운, 짧고 둥근 앞챙과 뒷챙, 정수리의 작은 둥근 단추, 옆으로 살짝 접어 올린 귀덮개에 작은 리본 매듭. 체크 무늬는 넓고 은은한 두세 줄의 연한 베이지 줄로만 표현한다. 모자는 머리 기울기를 따라 살짝 비스듬히 얹힌다.
-3. 모노클: 화면 오른쪽 눈 주위에 얇은 금색 원형 테의 모노클 하나. 렌즈는 투명하고 눈 캡슐을 가리거나 변형하지 않으며, 테 아래에서 얼굴 아래쪽으로 가는 금색 체인이 짧게 늘어진다. 반짝임이나 반사광은 넣지 않는다.
-4. 여전히 입·코·눈썹 없음, 두 개의 검은 세로 캡슐 눈, 옅은 볼 홍조, 거의 검은 차콜 단색 배경, 1:1.`;
+1. 모자는 완전히 제거한다. 모자를 그리지 않는다.
+2. 머리카락: 코난의 헤어스타일. 짙은 흑갈색(거의 검정에 가까운 다크 브라운) 머리, 이마를 덮는 크고 뾰족한 앞머리 덩어리 몇 개, 정수리에 위로 솟은 삐친 머리(더듬이) 하나, 옆머리는 귀 위를 덮는 짧은 덩어리. 몇 개의 크고 매끈한 덩어리로만 단순화. 앞머리가 두 눈을 가리지 않는다.
+3. 얼굴: 코난의 따뜻하고 밝은 피치 베이지 피부톤, 둥근 봇 얼굴, 입·코 없음, 옅은 코랄 볼 홍조, 같은 피부색 귀.
+4. 옷: 화면 아래 가장자리에 파란 블레이저 옷깃, 흰 셔츠 칼라, 빨간 나비넥타이 일부. 큰 색면으로 단순화.
+5. 안경: 코난의 상징인 크고 둥근 검은 뿔테 안경. 두 렌즈가 각각 한쪽 눈 캡슐 전체를 여유 있게 감싸고, 렌즈는 완전히 투명하며 반사광·반짝임 없음. 테는 굵고 매끈한 짙은 네이비/검정 색면. 눈 캡슐은 렌즈 안에 온전히 보인다. 모노클은 그리지 않는다.
+6. 두 개의 검은 세로 캡슐 눈, 왼쪽 아래에서 오른쪽 위를 들여다보는 시계방향 15~20도 기울기, 머리 왼쪽·아래 가장자리 크롭, 오른쪽 위 여백, 거의 검은 차콜 단색 배경, 1:1.`;
 const prompt = base + addendum;
 const RUNS = [
-  { model: 'google/gemini-3-pro-image', name: 'conan-a' },
-  { model: 'google/gemini-3-pro-image', name: 'conan-b' },
-  { model: 'openai/gpt-5.4-image-2', name: 'conan-c' },
-  { model: 'openai/gpt-5.4-image-2', name: 'conan-d' },
+  { model: 'google/gemini-3-pro-image', name: 'conan4-a' },
+  { model: 'google/gemini-3-pro-image', name: 'conan4-b' },
+  { model: 'openai/gpt-5.4-image-2', name: 'conan4-c' },
+  { model: 'openai/gpt-5.4-image-2', name: 'conan4-d' },
 ];
 interface ChatResponse { choices?: { message?: { images?: { image_url?: { url?: string } }[] } }[]; error?: { message?: string }; usage?: { cost?: number } }
 async function run({ model, name }: { model: string; name: string }): Promise<string> {

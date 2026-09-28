@@ -1,6 +1,6 @@
 import type { PullRequest } from './github';
 
-export type SmartFilter = 'all' | 'ready' | 'small' | 'recent';
+export type SmartFilter = 'all' | 'ready' | 'small' | 'recent' | 'attention' | 'tested';
 export type SortOrder = 'smart' | 'updated' | 'size';
 
 export const SMALL_DIFF_LINES = 150;
@@ -56,6 +56,9 @@ export function matchesSmartFilter(pull: PullRequest, filter: SmartFilter, now: 
       return isSmall(pull);
     case 'recent':
       return isRecent(pull, now);
+    case 'attention':
+    case 'tested':
+      return true;
     default:
       return filter satisfies never;
   }

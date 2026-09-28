@@ -7,6 +7,7 @@ export interface ReadinessResult {
   risk: number;
   blocker: number;
   scope: number;
+  tested: number;
   reason: string;
 }
 
@@ -82,6 +83,18 @@ const QUESTIONS = {
       'Critical: security, authentication, payments, migrations, or infrastructure with wide blast radius',
     ],
   },
+  verified_testing: {
+    type: 'score',
+    instructions:
+      'Across the `pull_request.body`, `reviews` and `comments`, how strong is the evidence that this change was actually exercised end to end, not just unit tested? Count concrete reports of running the real app, service or API and observing the result: end-to-end or integration test runs with results, manual QA steps with outcomes, screenshots, recordings, before/after measurements, or a reviewer or bot stating they ran it. A test plan that was never run, or only unit tests, is weak evidence.',
+    criteria: [
+      'No testing mentioned',
+      'Only claims, an unrun test plan, or unit tests only',
+      'Some real verification reported, such as an integration test run or manual check without detail',
+      'Clear end-to-end verification with concrete results, commands or screenshots',
+      'Thorough end-to-end proof: recorded runs or screenshots plus independent confirmation by a reviewer or bot',
+    ],
+  },
   scope_clarity: {
     type: 'score',
     instructions: 'How focused and clearly explained is this pull request, judging by the `pull_request.body` and whether the `files` match the stated purpose?',
@@ -146,6 +159,7 @@ function describe(result: Omit<ReadinessResult, 'reason'>): string {
   const parts = [
     result.evidence >= 0.75 ? 'strong sign-off' : result.evidence >= 0.5 ? 'reviewed' : 'little review evidence',
     result.blocker >= 0.5 ? 'open concerns' : null,
+    result.tested >= 0.75 ? 'e2e tested' : null,
     result.risk >= 0.75 ? 'high-risk area' : result.risk <= 0.25 ? 'low risk' : null,
   ];
   return parts.filter((part) => part != null).join(' · ');
@@ -162,12 +176,13 @@ export async function assessReadiness(pull: PullRequest): Promise<ReadinessResul
   const request = JSON.stringify({ model: 'jev-latest', state: buildState(pull, context), questions: QUESTIONS });
   const response: SystemOneResponse = JSON.parse(await invoke<string>('readiness', { request }));
   const answers = response.answers;
-  if (answers == null) throw new Error(response.error?.message ?? 'Jev returned no answers');
+  if (answers == null) throw new Error(response.error?.message ?? 'No answers returned');
   const evidence = scoreOf(answers, 'merge_evidence');
   const blocker = noulOf(answers, 'outstanding_blockers');
   const risk = scoreOf(answers, 'change_risk');
   const scope = scoreOf(answers, 'scope_clarity');
+  const tested = scoreOf(answers, 'verified_testing');
   const score = 0.5 * evidence + 0.2 * scope + 0.3 * (1 - risk) - 0.6 * blocker;
-  const result = { score, evidence, risk, blocker, scope };
+  const result = { score, evidence, risk, blocker, scope, tested };
   return { ...result, reason: describe(result) };
 }
