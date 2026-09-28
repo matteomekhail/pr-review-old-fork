@@ -8,7 +8,8 @@
     "tauri": "tauri",
     "test": "bun test src",
     "typecheck": "tsc --noEmit",
-    "app": "tauri build --bundles app"
+    "app": "tauri build --bundles app",
+    "install:app": "bash scripts/install.sh"
   },
   "dependencies": {
     "@pierre/diffs": "1.5.1",

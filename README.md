@@ -23,11 +23,21 @@ A fast, keyboard-first macOS app for reviewing and merging GitHub pull requests.
 
 All GitHub access goes through your existing [GitHub CLI](https://cli.github.com) login (`gh auth login`). The app never sees or stores a token. The Rust backend exposes a small set of commands that run `gh` with validated arguments.
 
+## Install
+
+One step: builds from source and installs to `/Applications` (re-run to update):
+
+```bash
+gh repo clone sunwrobert/pr-review /tmp/pr-review-src -- -q && bash /tmp/pr-review-src/scripts/install.sh
+```
+
+From a checkout, `bun run install:app` does the same.
+
 ## Requirements
 
 - macOS, [Bun](https://bun.sh), Rust (stable), and Xcode Command Line Tools.
 - `gh` authenticated.
-- Optional: `OPENROUTER_API_KEY` in your environment or login shell for Jev readiness scoring.
+- Optional: `OPENROUTER_API_KEY` in your environment or login shell for AI readiness scoring, grouping and the Tested filter.
 
 ## Develop
 
