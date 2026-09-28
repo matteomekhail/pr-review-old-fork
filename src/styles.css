@@ -570,3 +570,13 @@ button, .chip, .file, #pr-list li { touch-action: manipulation; }
 #toggle-grouping.active, :root[data-theme=light] #toggle-grouping.active { color: var(--text); border-color: #33353b; background: var(--bg-active); }
 .ai-status.on, .ai-status.busy { color: var(--text-2); border-color: var(--border); }
 .ai-status.on::before, .ai-status.busy::before { background: var(--ok); }
+.status-bar { height: auto; min-height: 40px; flex-wrap: wrap; row-gap: 6px; padding-top: 7px; padding-bottom: 7px; overflow: visible; white-space: normal; }
+.chip-meta { height: auto; min-height: 24px; padding-top: 3px; padding-bottom: 3px; line-height: 16px; flex: 0 1 auto; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.chip-meta.readiness .reason { max-width: none; white-space: normal; overflow: visible; }
+.chip-meta.branch { flex-wrap: wrap; row-gap: 2px; }
+.chip-meta.branch code { white-space: nowrap; max-width: 100%; }
+.chip-meta.branch code:last-of-type { flex: 0 1 auto; }
+.chip-meta.plain, .chip-meta.delta, .chip-meta.muted-chip { white-space: nowrap; flex: none; }
+.meta-sep { align-self: center; }
+.chip { height: auto; min-height: 24px; padding-top: 3px; padding-bottom: 3px; line-height: 16px; white-space: normal; max-width: 100%; text-align: left; }
+.chip kbd, .chip .chip-count, .chip .dot, .chip svg { flex: none; }
