@@ -1287,12 +1287,21 @@ function renderBulkBar(): void {
   dom.bulkMerge.disabled = checked.every((pull) => pull.isDraft || pull.mergeable === 'CONFLICTING');
 }
 
+function syncCheckedRows(): void {
+  virtualList.forEachRendered((element) => {
+    const isChecked = state.checkedIds.has(element.dataset.key ?? '');
+    if (element.classList.contains('checked') === isChecked) return;
+    element.classList.toggle('checked', isChecked);
+    element.querySelector('.check-box')?.setAttribute('aria-checked', String(isChecked));
+  });
+}
+
 function setChecked(ids: Iterable<string>, isChecked: boolean): void {
   for (const id of ids) {
     if (isChecked) state.checkedIds.add(id);
     else state.checkedIds.delete(id);
   }
-  virtualList.refresh();
+  syncCheckedRows();
   renderBulkBar();
 }
 
@@ -1338,9 +1347,9 @@ function syncVisualRange(): void {
   const cursor = pulls.findIndex((pull) => pull.id === state.selectedId);
   if (anchor < 0 || cursor < 0) return;
   const [start, end] = anchor < cursor ? [anchor, cursor] : [cursor, anchor];
-  const range = new Set(pulls.slice(start, end + 1).map((pull) => pull.id));
-  setChecked([...state.checkedIds].filter((id) => !range.has(id)), false);
-  setChecked(range, true);
+  state.checkedIds = new Set(pulls.slice(start, end + 1).map((pull) => pull.id));
+  syncCheckedRows();
+  renderBulkBar();
 }
 
 function extendSelection(delta: number): void {
