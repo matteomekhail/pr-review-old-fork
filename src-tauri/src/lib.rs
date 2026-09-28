@@ -17,6 +17,7 @@ const QUEUE_FIELDS: &str = r#"
 const MAX_MERGE_STATE_IDS: usize = 25;
 
 const MAX_DIFF_FALLBACK_FILES: usize = 3000;
+const GH_TIMEOUT_SECS: u64 = 45;
 const SYSTEM_ONE_URL: &str = "https://openrouter.ai/api/v1/systemone";
 const MAX_READINESS_STATE_BYTES: usize = 600_000;
 
@@ -54,13 +55,15 @@ fn gh_binary() -> &'static str {
 }
 
 async fn gh(args: &[&str]) -> Result<String, String> {
-    let output = Command::new(gh_binary())
+    let child = Command::new(gh_binary())
         .args(args)
         .env("GH_PROMPT_DISABLED", "1")
         .env("NO_COLOR", "1")
         .kill_on_drop(true)
-        .output()
+        .output();
+    let output = tokio::time::timeout(std::time::Duration::from_secs(GH_TIMEOUT_SECS), child)
         .await
+        .map_err(|_| format!("gh timed out after {GH_TIMEOUT_SECS}s"))?
         .map_err(|error| format!("could not run gh: {error}"))?;
     if output.status.success() {
         return String::from_utf8(output.stdout).map_err(|error| error.to_string());

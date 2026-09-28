@@ -11,6 +11,7 @@ import { enableTooltips } from './tooltip';
 import { groupPulls, type PullGroup } from './grouping';
 import { imageUrlsInHtml, preloadImages } from './image-cache';
 import { routeLinksToBrowser } from './external-links';
+import { isSemanticMatch, semanticMatches } from './semantic-search';
 import { isReady, isRecent, isSmall, matchesSmartFilter, sortPulls, type SmartFilter, type SortOrder } from './smart';
 import { assessReadiness, isReadinessAvailable, type ReadinessResult } from './readiness';
 
@@ -177,9 +178,63 @@ function loadDiff(pull: PullRequest): Promise<ParsedFile[]> {
   return pending;
 }
 
+const SEMANTIC_DEBOUNCE_MS = 450;
+const SEMANTIC_MIN_CHARS = 3;
+let semanticQuery = '';
+let semanticScores = new Map<string, number>();
+let isSemanticLoading = false;
+let semanticTimer: number | undefined;
+let semanticAbort: AbortController | null = null;
+
+function literalMatch(pull: PullRequest, needle: string): boolean {
+  return `${pull.title} ${pull.repository.nameWithOwner} #${pull.number} ${pull.author?.login ?? ''} ${pull.headRefName}`.toLowerCase().includes(needle);
+}
+
 function matchesText(pull: PullRequest, needle: string): boolean {
   if (needle === '') return true;
-  return `${pull.title} ${pull.repository.nameWithOwner} #${pull.number} ${pull.author?.login ?? ''} ${pull.headRefName}`.toLowerCase().includes(needle);
+  if (literalMatch(pull, needle)) return true;
+  return semanticQuery === needle && isSemanticMatch(semanticScores.get(pull.id));
+}
+
+function renderSearchState(): void {
+  const box = dom.filter.closest('.search');
+  box?.classList.toggle('searching', isSemanticLoading);
+  const needle = state.filter.trim().toLowerCase();
+  const extra = needle !== '' && semanticQuery === needle ? state.pulls.filter((pull) => !literalMatch(pull, needle) && isSemanticMatch(semanticScores.get(pull.id))).length : 0;
+  box?.setAttribute('data-hint', isSemanticLoading ? 'Jev…' : extra > 0 ? `+${extra} Jev` : '');
+}
+
+function scheduleSemanticSearch(): void {
+  window.clearTimeout(semanticTimer);
+  semanticAbort?.abort();
+  const needle = state.filter.trim().toLowerCase();
+  if (!isAiEnabled || needle.length < SEMANTIC_MIN_CHARS || /^#?\d+$/.test(needle)) {
+    isSemanticLoading = false;
+    renderSearchState();
+    return;
+  }
+  semanticTimer = window.setTimeout(() => {
+    const controller = new AbortController();
+    semanticAbort = controller;
+    isSemanticLoading = true;
+    renderSearchState();
+    void semanticMatches(needle, state.pulls, controller.signal)
+      .then((scores) => {
+        if (controller.signal.aborted || state.filter.trim().toLowerCase() !== needle) return;
+        semanticQuery = needle;
+        semanticScores = scores;
+        renderList();
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) console.warn('semantic search failed', errorMessage(error));
+      })
+      .finally(() => {
+        if (semanticAbort === controller) {
+          isSemanticLoading = false;
+          renderSearchState();
+        }
+      });
+  }, SEMANTIC_DEBOUNCE_MS);
 }
 
 function filteredPulls(): PullRequest[] {
@@ -391,7 +446,7 @@ function renderList(): void {
         <span class="check-box" data-check="${pull.id}" role="checkbox" aria-checked="${state.checkedIds.has(pull.id)}" title="Select  E / ⇧V"></span>
         ${statusIcon(pull)}
         <span class="id" title="${escapeHtml(pull.repository.nameWithOwner)}">${repoTag(pull, primaryRepo)}#${pull.number}</span>
-        <span class="t">${escapeHtml(pull.title)}</span>
+        <span class="t">${escapeHtml(pull.title)}${state.filter.trim() !== '' && !literalMatch(pull, state.filter.trim().toLowerCase()) && isSemanticMatch(semanticScores.get(pull.id)) ? '<span class="jev-match" title="Matched by Jev">Jev</span>' : ''}</span>
         <span class="right">${pull.queueEntry != null ? `<span class="queue-pill" title="${escapeHtml(queueLabel(pull))}">Queued</span>` : ''}${readinessDot(pull)}${checksIcon(pull)}<span class="delta"><i class="add">+${pull.additions}</i> <i class="del">−${pull.deletions}</i></span><span class="age">${relativeTime(pull.updatedAt)}</span>${avatar(pull)}</span>
       </li>`,
     )
@@ -853,6 +908,8 @@ function renderRefreshStatus(): void {
   const button = document.getElementById('refresh-button');
   const isLoading = inFlight.has(state.kind);
   button?.classList.toggle('spinning', isLoading);
+  document.getElementById('list-pane')?.classList.toggle('loading', isLoading);
+  status?.classList.toggle('active', isLoading);
   if (status == null) return;
   if (isLoading) {
     status.textContent = 'Refreshing…';
@@ -886,6 +943,11 @@ function manualRefresh(): void {
   const before = queueCache.get(state.kind) ?? [];
   const kind = state.kind;
   const started = Date.now();
+  if (inFlight.has(kind)) {
+    toast('Already refreshing…');
+    return;
+  }
+  toast('Refreshing pull requests…');
   const pending = refresh(kind, true);
   renderRefreshStatus();
   void pending.then(() => {
@@ -907,7 +969,7 @@ function refresh(kind: QueueKind, isForced = false): Promise<void> {
       if (kind === state.kind) applyQueue(merged);
       if (kind === state.kind) void scoreWithJev(merged);
       if (kind === state.kind) void ensureGroups();
-        return loadMergeStates(kind, merged);
+      void loadMergeStates(kind, merged).catch((error: unknown) => console.warn('merge states failed', errorMessage(error)));
     })
     .catch((error: unknown) => {
       if (kind !== state.kind) return;
@@ -1078,7 +1140,7 @@ function confirmBulkMerge(pulls: PullRequest[], method: MergeMethod): Promise<bo
   const notReady = pulls.filter((pull) => !isReady(pull)).length;
   dom.bulkConfirmTitle.textContent = `${MERGE_LABELS[method]} ${pulls.length} pull request${pulls.length === 1 ? '' : 's'}?`;
   dom.bulkConfirmList.innerHTML = pulls
-    .map((pull) => `<li>${statusIcon(pull)}<span class="id">#${pull.number}</span><span class="t">${escapeHtml(pull.title)}</span>${isReady(pull) ? '<span class="tone ok"><i></i>Ready</span>' : `<span class="tone wait"><i></i>${escapeHtml(mergeState(pull).label)}</span>`}</li>`)
+    .map((pull) => `<li>${statusIcon(pull)}<span class="id">#${pull.number}</span><span class="t">${escapeHtml(pull.title)}${state.filter.trim() !== '' && !literalMatch(pull, state.filter.trim().toLowerCase()) && isSemanticMatch(semanticScores.get(pull.id)) ? '<span class="jev-match" title="Matched by Jev">Jev</span>' : ''}</span>${isReady(pull) ? '<span class="tone ok"><i></i>Ready</span>' : `<span class="tone wait"><i></i>${escapeHtml(mergeState(pull).label)}</span>`}</li>`)
     .join('');
   dom.bulkConfirmNote.textContent = notReady > 0 ? `${notReady} not ready. GitHub will reject any that branch protection blocks; the rest still merge.` : 'Merged one at a time, in this order. Branch protection and merge queues still apply.';
   dom.bulkConfirm.returnValue = '';
@@ -1502,6 +1564,8 @@ document.querySelectorAll<HTMLButtonElement>('.views button').forEach((button) =
 dom.filter.addEventListener('input', () => {
   state.filter = dom.filter.value;
   renderList();
+  renderSearchState();
+  scheduleSemanticSearch();
 });
 dom.toggleAll.addEventListener('click', toggleAllFiles);
 element('toggle-sidebar').addEventListener('click', () => layout.toggle('sidebar'));

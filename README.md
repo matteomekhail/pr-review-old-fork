@@ -11,6 +11,7 @@ A fast, keyboard-first macOS app for reviewing and merging GitHub pull requests.
 - **Jev readiness (optional):** with `OPENROUTER_API_KEY` set, each PR is scored by [Jev](https://openrouter.ai) on review evidence, open concerns, change risk and scope, taken from its description, reviews and comments. Without a key, it falls back to the built-in rules.
 - **Diffs:** [`@pierre/diffs`](https://www.npmjs.com/package/@pierre/diffs), virtualized and syntax-highlighted in web workers. Collapsible files and sticky headers.
 - **Layouts:** stacked (description above diff) or side by side (`V`: description left, diff right). Panes resize and hide.
+- **Smart search (Jev):** typing a topic like `frontend` or `billing` also finds PRs that don't contain the word, tagged **Jev** in the list. Literal matches still appear instantly.
 - **Smart groups (Jev):** `T` groups related PRs into efforts, such as a run of lib extractions or UI refactors. Groups are ordered by average readiness and each can be collapsed or selected as a whole for bulk merge.
 - **Merge queue:** PRs already in a queue show a yellow marker with their position, and queued merges skip the confirmation.
 - **Themes:** light, dark, or follow the system.
