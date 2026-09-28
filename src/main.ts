@@ -214,9 +214,6 @@ function matchesText(pull: PullRequest, needle: string): boolean {
 function renderSearchState(): void {
   const box = dom.filter.closest('.search');
   box?.classList.toggle('searching', isSemanticLoading);
-  const needle = state.filter.trim().toLowerCase();
-  const extra = needle !== '' && semanticQuery === needle ? state.pulls.filter((pull) => !literalMatch(pull, needle) && isSemanticMatch(semanticScores.get(pull.id))).length : 0;
-  box?.setAttribute('data-hint', isSemanticLoading ? 'Jev…' : extra > 0 ? `+${extra} Jev` : '');
 }
 
 function scheduleSemanticSearch(): void {
@@ -369,7 +366,7 @@ function readinessDot(pull: PullRequest): string {
   if (score == null) return '';
   const percent = Math.round(Math.max(0, Math.min(1, score)) * 100);
   const toneName = percent >= 65 ? 'ok' : percent >= 40 ? 'wait' : 'bad';
-  return `<span class="ai-score ${toneName}" title="Jev readiness ${percent}%">${percent}</span>`;
+  return `<span class="ai-score ${toneName}" title="Readiness ${percent}%">${percent}</span>`;
 }
 
 function avatar(pull: PullRequest): string {
@@ -445,7 +442,7 @@ async function ensureGroups(isUserInitiated = false): Promise<void> {
 
 function toggleGrouping(): void {
   if (!isAiEnabled) {
-    toast('Grouping uses Jev. Set OPENROUTER_API_KEY to enable it.', true);
+    toast('Grouping needs OPENROUTER_API_KEY.', true);
     return;
   }
   isGrouped = !isGrouped;
@@ -514,12 +511,11 @@ const virtualList = new VirtualList(dom.list);
 
 function rowHtml(pull: PullRequest, primaryRepo: string | undefined, needle: string): string {
   const isChecked = state.checkedIds.has(pull.id);
-  const isJev = needle !== '' && !literalMatch(pull, needle) && isSemanticMatch(semanticScores.get(pull.id));
   return `<li data-key="${pull.id}" data-id="${pull.id}" class="${pull.id === state.selectedId ? 'selected' : ''}${isChecked ? ' checked' : ''}${pull.queueEntry != null ? ' queued' : ''}">
         <span class="check-box" data-check="${pull.id}" role="checkbox" aria-checked="${isChecked}" title="Select  E / ⇧V"></span>
         ${statusIcon(pull)}
         <span class="id" title="${escapeHtml(pull.repository.nameWithOwner)}">${repoTag(pull, primaryRepo)}#${pull.number}</span>
-        <span class="t">${escapeHtml(pull.title)}${isJev ? '<span class="jev-match" title="Matched by Jev">Jev</span>' : ''}</span>
+        <span class="t">${escapeHtml(pull.title)}</span>
         <span class="right">${pull.queueEntry != null ? `<span class="queue-pill" title="${escapeHtml(queueLabel(pull))}">Queued</span>` : ''}${readinessDot(pull)}${checksIcon(pull)}<span class="delta"><i class="add">+${pull.additions}</i> <i class="del">−${pull.deletions}</i></span><span class="age">${relativeTime(pull.updatedAt)}</span>${avatar(pull)}</span>
       </li>`;
 }
@@ -530,7 +526,7 @@ function renderList(): void {
   const sections = listSections(pulls);
   const needle = state.filter.trim().toLowerCase();
   const rows: VirtualRow[] = [];
-  const note = !isGrouped ? '' : isGrouping ? '<span class="spinner"></span>Grouping related work with Jev…' : groups.length === 0 ? 'No groups yet · press T again or run “Regroup with Jev”' : '';
+  const note = !isGrouped ? '' : isGrouping ? '<span class="spinner"></span>Grouping related work…' : groups.length === 0 ? 'No groups yet · press T again or run “Regroup”' : '';
   if (note !== '') rows.push({ key: 'status', height: STATUS_ROW_HEIGHT, render: () => `<li data-key="status" class="group-status">${note}</li>` });
   for (const section of sections) {
     const group = section.group;
@@ -731,10 +727,10 @@ function toneChip({ label, tone: toneName }: { label: string; tone: string }, ti
 function readinessChip(pull: PullRequest): string {
   if (!isAiEnabled) return '';
   const result = aiResults.get(aiKey(pull));
-  if (result == null) return chip(aiPending.has(aiKey(pull)) ? '<span class="spinner"></span>Jev' : 'Jev —', 'Jev readiness');
+  if (result == null) return chip(aiPending.has(aiKey(pull)) ? '<span class="spinner"></span>Readiness' : 'Readiness —', 'Readiness');
   const percent = Math.round(Math.max(0, Math.min(1, result.score)) * 100);
   const toneName = percent >= 65 ? 'ok' : percent >= 40 ? 'wait' : 'bad';
-  const detail = `Jev readiness ${percent}% · ${result.reason}\nevidence ${Math.round(result.evidence * 100)} · open concerns ${Math.round(result.blocker * 100)} · risk ${Math.round(result.risk * 100)} · scope ${Math.round(result.scope * 100)}`;
+  const detail = `Readiness ${percent}% · ${result.reason}\nevidence ${Math.round(result.evidence * 100)} · open concerns ${Math.round(result.blocker * 100)} · risk ${Math.round(result.risk * 100)} · scope ${Math.round(result.scope * 100)}`;
   return chip(`<b>${percent}</b><span class="reason">${escapeHtml(result.reason)}</span>`, detail, `readiness tone-${toneName}`);
 }
 
@@ -1076,13 +1072,13 @@ function renderAiStatus(): void {
   if (badge == null) return;
   if (!isAiEnabled) {
     badge.textContent = 'Rules';
-    badge.title = 'Built-in rules · set OPENROUTER_API_KEY for Jev';
+    badge.title = 'Built-in rules · set OPENROUTER_API_KEY for smart ranking';
     badge.className = 'ai-status off';
     return;
   }
   const scored = state.pulls.filter((pull) => aiResults.has(aiKey(pull))).length;
-  badge.textContent = aiPending.size > 0 ? `Jev ${scored}/${state.pulls.length}` : 'Jev';
-  badge.title = 'Smart sort ranks by Jev readiness via OpenRouter';
+  badge.textContent = aiPending.size > 0 ? `AI ${scored}/${state.pulls.length}` : 'AI';
+  badge.title = 'Smart sort ranks by AI readiness';
   badge.className = aiPending.size > 0 ? 'ai-status busy' : 'ai-status on';
 }
 
@@ -1118,7 +1114,7 @@ function applyMergeStates(kind: QueueKind, states: MergeState[]): void {
   const updated = pulls.map((pull) => {
     const mergeState = byId.get(pull.id);
     if (mergeState == null) return pull;
-    mergeStateCache.set(pull.id, { updatedAt: pull.updatedAt, state: mergeState });
+    if (mergeState.mergeStateStatus !== 'UNKNOWN') mergeStateCache.set(pull.id, { updatedAt: pull.updatedAt, state: mergeState });
     return { ...pull, mergeable: mergeState.mergeable, mergeStateStatus: mergeState.mergeStateStatus };
   });
   queueCache.set(kind, updated);
@@ -1132,10 +1128,21 @@ function applyMergeStates(kind: QueueKind, states: MergeState[]): void {
   });
 }
 
-function loadMergeStates(kind: QueueKind, pulls: PullRequest[]): Promise<void> {
-  const stale = pulls.filter((pull) => mergeStateCache.get(pull.id)?.updatedAt !== pull.updatedAt).map((pull) => pull.id);
-  if (stale.length === 0) return Promise.resolve();
-  return fetchMergeStates(stale, (states) => applyMergeStates(kind, states));
+const MERGE_STATE_RETRY_MS = [2_000, 5_000, 10_000, 20_000];
+
+async function loadMergeStates(kind: QueueKind, pulls: PullRequest[]): Promise<void> {
+  let pending = pulls.filter((pull) => mergeStateCache.get(pull.id)?.updatedAt !== pull.updatedAt).map((pull) => pull.id);
+  for (let attempt = 0; pending.length > 0; attempt += 1) {
+    const unknown: string[] = [];
+    await fetchMergeStates(pending, (states) => {
+      applyMergeStates(kind, states);
+      unknown.push(...states.filter((mergeState) => mergeState.mergeStateStatus === 'UNKNOWN').map((mergeState) => mergeState.id));
+    });
+    const delay = MERGE_STATE_RETRY_MS[attempt];
+    if (delay == null || unknown.length === 0) return;
+    await new Promise((resolve) => window.setTimeout(resolve, delay));
+    pending = unknown;
+  }
 }
 
 const inFlight = new Map<QueueKind, Promise<void>>();
@@ -1377,7 +1384,7 @@ function confirmBulkMerge(pulls: PullRequest[], method: MergeMethod): Promise<bo
   const notReady = pulls.filter((pull) => !isReady(pull)).length;
   dom.bulkConfirmTitle.textContent = `${MERGE_LABELS[method]} ${pulls.length} pull request${pulls.length === 1 ? '' : 's'}?`;
   dom.bulkConfirmList.innerHTML = pulls
-    .map((pull) => `<li>${statusIcon(pull)}<span class="id">#${pull.number}</span><span class="t">${escapeHtml(pull.title)}${state.filter.trim() !== '' && !literalMatch(pull, state.filter.trim().toLowerCase()) && isSemanticMatch(semanticScores.get(pull.id)) ? '<span class="jev-match" title="Matched by Jev">Jev</span>' : ''}</span>${isReady(pull) ? '<span class="tone ok"><i></i>Ready</span>' : `<span class="tone wait"><i></i>${escapeHtml(mergeState(pull).label)}</span>`}</li>`)
+    .map((pull) => `<li>${statusIcon(pull)}<span class="id">#${pull.number}</span><span class="t">${escapeHtml(pull.title)}</span>${isReady(pull) ? '<span class="tone ok"><i></i>Ready</span>' : `<span class="tone wait"><i></i>${escapeHtml(mergeState(pull).label)}</span>`}</li>`)
     .join('');
   dom.bulkConfirmNote.textContent = notReady > 0 ? `${notReady} not ready. GitHub will reject any that branch protection blocks; the rest still merge.` : 'Merged one at a time, in this order. Branch protection and merge queues still apply.';
   dom.bulkConfirm.returnValue = '';
@@ -1655,8 +1662,8 @@ const COMMANDS: Command[] = [
   { id: 'smart-ready', section: 'Filter', title: 'Show ready to merge', aliases: 'green approved mergeable', keys: ['⌥1'], run: () => setSmartFilter('ready') },
   { id: 'smart-small', section: 'Filter', title: 'Show small diffs', aliases: 'tiny quick', keys: ['⌥2'], run: () => setSmartFilter('small') },
   { id: 'smart-recent', section: 'Filter', title: 'Show recently updated', aliases: 'new fresh', keys: ['⌥3'], run: () => setSmartFilter('recent') },
-  { id: 'group', section: 'Filter', title: 'Group related work (Jev)', aliases: 'cluster effort category batch smart group', keys: ['t'], run: toggleGrouping },
-  { id: 'regroup', section: 'Filter', title: 'Regroup with Jev', aliases: 'refresh groups cluster', keys: [], run: () => { groupsSignature = ''; localStorage.removeItem(GROUPS_CACHE_KEY); void ensureGroups(true); } },
+  { id: 'group', section: 'Filter', title: 'Group related work', aliases: 'cluster effort category batch smart group', keys: ['t'], run: toggleGrouping },
+  { id: 'regroup', section: 'Filter', title: 'Regroup', aliases: 'refresh groups cluster', keys: [], run: () => { groupsSignature = ''; localStorage.removeItem(GROUPS_CACHE_KEY); void ensureGroups(true); } },
   { id: 'sort', section: 'Filter', title: 'Cycle sort (smart / updated / smallest)', aliases: 'order', keys: ['⇧s'], run: cycleSortOrder },
 
   { id: 'visual', section: 'Select', title: 'Visual select mode (vim V)', aliases: 'multi range bulk vim', keys: ['⇧v'], run: toggleVisualMode, isEnabled: hasPull },
