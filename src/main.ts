@@ -172,7 +172,20 @@ function loadDiff(pull: PullRequest): Promise<ParsedFile[]> {
   const key = diffKey(pull);
   const cached = diffCache.get(key);
   if (cached != null) return cached;
-  const pending = fetchDiff(pull).then((patch) => parseDiff(key, patch));
+  const pending = fetchDiff(pull).then(
+    (patch) =>
+      new Promise<ParsedFile[]>((resolve, reject) => {
+        const parse = (): void => {
+          try {
+            resolve(parseDiff(key, patch));
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          }
+        };
+        if (patch.length < 200_000) parse();
+        else requestAnimationFrame(() => window.setTimeout(parse, 0));
+      }),
+  );
   pending.catch(() => diffCache.delete(key));
   diffCache.set(key, pending);
   if (diffCache.size > DIFF_CACHE_LIMIT) diffCache.delete(diffCache.keys().next().value ?? '');
@@ -284,7 +297,11 @@ function visiblePulls(): PullRequest[] {
   return visibleCache;
 }
 
+let smartCountsSource: PullRequest[] | null = null;
+
 function renderSmartCounts(): void {
+  if (smartCountsSource === state.pulls && dom.sort.value === state.sortOrder && dom.filterBar.querySelector('.chip.active')?.getAttribute('data-smart') === state.smartFilter) return;
+  smartCountsSource = state.pulls;
   const now = Date.now();
   const counts: Record<SmartFilter, number> = {
     all: state.pulls.length,
@@ -799,23 +816,42 @@ function prefetchAround(pull: PullRequest): void {
   const pulls = visiblePulls();
   const index = pulls.findIndex((candidate) => candidate.id === pull.id);
   const neighbours = [...pulls.slice(index + 1, index + 1 + PREFETCH_AHEAD), ...(index > 0 ? [pulls[index - 1]] : [])];
-  window.setTimeout(
-    () =>
-      neighbours.forEach((candidate) => {
-        if (candidate == null) return;
-        void loadDiff(candidate).catch(() => undefined);
-        void loadBody(candidate).catch(() => undefined);
-      }),
-    120,
-  );
+  const run = (): void =>
+    neighbours.forEach((candidate) => {
+      if (candidate == null || state.selectedId !== pull.id) return;
+      void loadDiff(candidate).catch(() => undefined);
+      void loadBody(candidate).catch(() => undefined);
+    });
+  const idle = (window as unknown as { requestIdleCallback?: (fn: () => void, options?: { timeout: number }) => void }).requestIdleCallback;
+  if (idle != null) idle(run, { timeout: 300 });
+  else window.setTimeout(run, 120);
 }
 
-async function select(pull: PullRequest): Promise<void> {
-  const token = ++renderToken;
+let detailFrame = 0;
+let lastSelectAt = 0;
+const RAPID_SELECT_MS = 90;
+
+function select(pull: PullRequest): Promise<void> {
   state.selectedId = pull.id;
   state.activeFileIndex = -1;
   virtualList.scrollToKey(pull.id);
   virtualList.forEachRendered((element) => element.classList.toggle('selected', element.dataset.key === pull.id));
+  const now = performance.now();
+  const isRapid = now - lastSelectAt < RAPID_SELECT_MS;
+  lastSelectAt = now;
+  cancelAnimationFrame(detailFrame);
+  window.clearTimeout(detailFrame);
+  if (!isRapid) return renderSelection(pull);
+  return new Promise((resolve) => {
+    detailFrame = window.setTimeout(() => {
+      if (state.selectedId === pull.id) void renderSelection(pull).then(resolve);
+      else resolve();
+    }, RAPID_SELECT_MS);
+  });
+}
+
+async function renderSelection(pull: PullRequest): Promise<void> {
+  const token = ++renderToken;
   dom.empty.hidden = true;
   dom.pr.hidden = false;
   currentFiles = [];
@@ -1705,10 +1741,14 @@ document.getElementById('pr-body-split')?.addEventListener('click', (event) => {
 document.querySelectorAll<HTMLButtonElement>('.views button').forEach((button) =>
   button.addEventListener('click', () => switchKind(button.dataset.kind as QueueKind)),
 );
+let filterFrame = 0;
 dom.filter.addEventListener('input', () => {
   state.filter = dom.filter.value;
-  renderList();
-  renderSearchState();
+  cancelAnimationFrame(filterFrame);
+  filterFrame = requestAnimationFrame(() => {
+    renderList();
+    renderSearchState();
+  });
   scheduleSemanticSearch();
 });
 dom.toggleAll.addEventListener('click', toggleAllFiles);

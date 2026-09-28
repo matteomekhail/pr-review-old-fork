@@ -89,6 +89,7 @@ export class CommandRegistry {
 
   handle(event: KeyboardEvent, isTyping: boolean): boolean {
     if (isTyping && isTextEditingChord(event)) return false;
+    if (event.key === 'Shift' || event.key === 'Meta' || event.key === 'Control' || event.key === 'Alt' || event.repeat === false && event.key === 'CapsLock') return false;
     const command = this.commands.find((candidate) => {
       if (isTyping && candidate.allowWhileTyping !== true) return false;
       return (this.chords.get(candidate) ?? []).some((chord) => matches(chord, event) && (!isTyping || chord.meta || chord.ctrl));
