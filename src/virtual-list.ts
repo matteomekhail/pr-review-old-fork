@@ -91,8 +91,13 @@ export class VirtualList {
     const top = this.offsets[index] ?? 0;
     if (top === this.highlightTop) return;
     const height = this.rows[index]?.height ?? 0;
-    const isJump = this.highlightTop == null || Math.abs(top - this.highlightTop) > height * 8;
-    if (this.highlight.classList.contains('instant') !== isJump) this.highlight.classList.toggle('instant', isJump);
+    const isFirst = this.highlightTop == null;
+    const distance = isFirst ? 0 : Math.abs(top - (this.highlightTop ?? 0));
+    const viewport = this.root.clientHeight;
+    const isOffscreenJump = distance > viewport * 1.5;
+    const isInstant = isFirst || isOffscreenJump;
+    if (this.highlight.classList.contains('instant') !== isInstant) this.highlight.classList.toggle('instant', isInstant);
+    if (!isInstant) this.highlight.style.transitionDuration = `${Math.round(Math.min(260, 150 + distance / 12))}ms`;
     if (this.highlightHeight !== height) {
       this.highlight.style.height = `${height}px`;
       this.highlightHeight = height;

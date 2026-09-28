@@ -1,5 +1,5 @@
 import { attachScrollFade } from './scroll-fade';
-import { animateDialogCancel, flash, setVisibleWithMotion } from './motion';
+import { animateDialogCancel, flash, glideScrollTo, setVisibleWithMotion } from './motion';
 import { ATTENTION_META, ATTENTION_ORDER, attentionReasons, buildAgentPrompt, needsAttention, prStatus, type AttentionReason } from './status';
 import { applyThemeColors, SYSTEM_THEME_ID, THEMES, themeById, type AppTheme } from './themes';
 import { ThemePicker } from './theme-picker';
@@ -60,7 +60,6 @@ const dom = {
   files: element('files'),
   fileCount: element('file-count'),
   diffRoot: element('diff-root'),
-  toggleAll: element<HTMLButtonElement>('toggle-all'),
   approve: element<HTMLButtonElement>('approve'),
   merge: element<HTMLButtonElement>('merge'),
   confirm: element<HTMLDialogElement>('confirm'),
@@ -850,18 +849,10 @@ function renderFiles(files: ParsedFile[]): void {
       </button>`,
     )
     .join('');
-  syncToggleAll();
 }
 
 function markFileCollapsed(id: string, isCollapsed: boolean): void {
   dom.files.querySelector(`[data-id="${CSS.escape(id)}"]`)?.classList.toggle('collapsed', isCollapsed);
-  syncToggleAll();
-}
-
-function syncToggleAll(): void {
-  const isAllCollapsed = currentFiles.length > 0 && diffView.collapsedCount() === currentFiles.length;
-  dom.toggleAll.title = `${isAllCollapsed ? 'Expand all files' : 'Collapse all files'}  ⇧C`;
-  dom.toggleAll.classList.toggle('on', isAllCollapsed);
 }
 
 function setActiveFile(index: number): void {
@@ -1011,8 +1002,14 @@ function scrollPane(pane: Exclude<PaneTarget, 'list'>, motion: VimMotion): void 
     'half-down': page * 0.5, 'half-up': -page * 0.5, 'page-down': page * 0.9, 'page-up': -page * 0.9,
     'line-down': DIFF_LINE_PX, 'line-up': -DIFF_LINE_PX, top: -target.scrollHeight, bottom: target.scrollHeight,
   };
-  if (target === dom.diffRoot) diffView.scrollBy(deltas[motion]);
-  else target.scrollTop = Math.max(0, Math.min(target.scrollHeight - target.clientHeight, target.scrollTop + deltas[motion]));
+  const isStep = motion === 'line-down' || motion === 'line-up';
+  if (isStep) {
+    if (target === dom.diffRoot) diffView.scrollBy(deltas[motion]);
+    else target.scrollTop = Math.max(0, Math.min(target.scrollHeight - target.clientHeight, target.scrollTop + deltas[motion]));
+    return;
+  }
+  if (target === dom.diffRoot) diffView.glideBy(deltas[motion]);
+  else glideScrollTo(target, target.scrollTop + deltas[motion]);
 }
 
 function moveList(motion: VimMotion): void {
@@ -1048,10 +1045,6 @@ function moveFile(delta: number): void {
 function toggleCurrentFile(): void {
   const file = currentFiles[Math.max(0, state.activeFileIndex)];
   if (file != null) diffView.toggle(file.id);
-}
-
-function toggleAllFiles(): void {
-  diffView.setAllCollapsed(diffView.collapsedCount() !== currentFiles.length);
 }
 
 const mergeStateCache = new Map<string, { updatedAt: string; state: MergeState }>();
@@ -1940,7 +1933,6 @@ const COMMANDS: Command[] = [
   ...DIFF_SCROLL_COMMANDS,
   { id: 'toggle-file', section: 'Diff', title: 'Collapse / expand file', aliases: 'fold unfold hide', keys: ['x'], run: toggleCurrentFile, isEnabled: hasFiles },
   { id: 'toggle-bots', section: 'Pull request', title: 'Show / hide bot comments', aliases: 'devin perry github-actions automated comments conversation', keys: ['⇧b'], run: () => { showBotComments = !showBotComments; localStorage.setItem('showBotComments', showBotComments ? '1' : '0'); const pull = selectedPull(); if (pull != null) renderDetail(pull); toast(showBotComments ? 'Showing bot comments' : 'Hiding bot comments'); } },
-  { id: 'toggle-all', section: 'Diff', title: 'Collapse / expand all files', aliases: 'fold unfold hide', keys: ['⇧c'], run: toggleAllFiles, isEnabled: hasFiles },
   { id: 'diff-style', section: 'Diff', title: 'Toggle split / unified diff', aliases: 'side by side inline view', keys: ['s', '⌘⌥s'], run: toggleStyle },
 
   { id: 'comment', section: 'Pull request', title: 'Write a comment', aliases: 'reply message mention devin note', keys: ['c'], run: openCommentDialog, isEnabled: hasPull },
@@ -2053,7 +2045,6 @@ dom.filter.addEventListener('input', () => {
   });
   scheduleSemanticSearch();
 });
-dom.toggleAll.addEventListener('click', toggleAllFiles);
 element('toggle-sidebar').addEventListener('click', () => layout.toggle('list'));
 element('open-palette').addEventListener('click', () => palette.open());
 element('open-help').addEventListener('click', openHelp);

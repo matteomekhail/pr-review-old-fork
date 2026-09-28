@@ -2,7 +2,9 @@
 
 A fast, keyboard-first macOS app for reviewing and merging GitHub pull requests. It shows a PR's description, diff and checks, and lets you merge, with nothing else in the way.
 
-![icon](branding/icon-1024.png)
+![PR Review showing a pull request with its description, conversation and diff](docs/screenshot.png)
+
+<sub>Dummy data. Regenerate with <code>bun run screenshot</code> (<code>--theme=catppuccin-mocha</code>, <code>--width=</code>, <code>--height=</code>, <code>--out=</code>).</sub>
 
 ## Features
 
@@ -56,6 +58,15 @@ bun run app
 open "src-tauri/target/release/bundle/macos/PR Review.app"
 ```
 
+## Screenshot
+
+```bash
+bun run screenshot                     # docs/screenshot.png, dark theme, 2x
+bun run screenshot --theme=github-light --out=docs/light.png
+```
+
+It builds the frontend against the offline fixture layer in `bench/`, loads a curated demo queue (`bench/demo.ts`), opens the featured PR and captures the window in headless Chromium. No GitHub or Jev calls.
+
 ## Test
 
 ```bash
@@ -79,7 +90,7 @@ Vim motions work the same in every pane; the modifier picks the pane.
 | Area | Keys |
 | --- | --- |
 | Queue | `J`/`K` next/prev · `gg`/`G` first/last · `Space`/`⇧Space` page the middle pane |
-| Files | `N` or `]c`/`[c` next/prev file · `X` collapse · `⇧C` collapse all · `S` split/unified |
+| Files | `N` or `]c`/`[c` next/prev file · `X` collapse · `S` split/unified |
 | Filters | `⇧T` group related work · `⌥1` Ready · `⌥4` Unready · `⌥0` All (Small `⌥2`, Recent `⌥3`, Tested `⌥5` via `⌘K`) · `⇧S` sort · `⇧X` fix with agent · `⇧U` select unready · `⇧R` select ready |
 | Select | `⇧V` visual mode (then `J`/`K`) · `E` toggle · `⇧J`/`⇧K` extend · `⇧R` all ready · `⌘A` all · `Esc` clear |
 | Act | `⇧X` copy an agent prompt to fix every PR with conflicts or failing checks (or just the selected ones) · `O` open on GitHub (in Chrome) · `A` approve · `⌘↵` merge (all selected when several are checked) · `⇧A` bulk approve · `⌘↵` bulk merge |

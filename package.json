@@ -14,7 +14,8 @@
     "bench": "bun bench/run.ts",
     "bench:noise": "bun bench/run.ts --self-test",
     "model": "bun bench/model.ts",
-    "climb": "bash bench/climb.sh"
+    "climb": "bash bench/climb.sh",
+    "screenshot": "bun bench/screenshot.ts"
   },
   "dependencies": {
     "@pierre/diffs": "1.5.1",

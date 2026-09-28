@@ -1,3 +1,4 @@
+import { glideScrollTo, prefersReducedMotion } from './motion';
 import { CodeView, parsePatchFiles, type CodeViewDiffItem, type FileDiffMetadata } from '@pierre/diffs';
 import { getOrCreateWorkerPoolSingleton } from '@pierre/diffs/worker';
 import DiffWorker from '@pierre/diffs/worker/worker.js?worker';
@@ -132,6 +133,10 @@ export class DiffView {
     this.root.scrollTop = Math.max(0, Math.min(this.root.scrollHeight - this.root.clientHeight, this.root.scrollTop + pixels));
   }
 
+  glideBy(pixels: number): void {
+    glideScrollTo(this.root, this.root.scrollTop + pixels);
+  }
+
   scrollByPage(fraction: number): void {
     this.scrollBy(this.root.clientHeight * fraction);
   }
@@ -141,7 +146,7 @@ export class DiffView {
   }
 
   scrollToFile(id: string): void {
-    this.view.scrollTo({ type: 'item', id, align: 'start', behavior: 'instant' });
+    this.view.scrollTo({ type: 'item', id, align: 'start', behavior: prefersReducedMotion() ? 'instant' : 'smooth' });
   }
 
   toggle(id: string, isCollapsed = !this.collapsed.has(id)): void {

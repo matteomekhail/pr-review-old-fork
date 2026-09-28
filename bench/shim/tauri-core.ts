@@ -1,8 +1,10 @@
+import { DEMO_CONFLICTS, DEMO_PULLS, demoBody, demoConversation, demoDiff } from '../demo';
 import { generateBody, generateDiff, generatePulls, type FixturePull } from '../fixtures';
 
 const COUNT = Number(new URLSearchParams(location.search).get('pulls') ?? 120);
 const LATENCY_MS = Number(new URLSearchParams(location.search).get('latency') ?? 0);
-const pulls = generatePulls(COUNT);
+const IS_DEMO = new URLSearchParams(location.search).has('demo');
+const pulls = IS_DEMO ? DEMO_PULLS : generatePulls(COUNT);
 const byId = new Map(pulls.map((pull) => [pull.id, pull]));
 const byNumber = new Map(pulls.map((pull) => [pull.number, pull]));
 const calls: Record<string, number> = {};
@@ -10,7 +12,7 @@ const calls: Record<string, number> = {};
 Object.assign(window, { __shimCalls: calls });
 
 function mergeStateOf(pull: FixturePull): { id: string; mergeable: string; mergeStateStatus: string } {
-  const conflicted = pull.number % 13 === 0;
+  const conflicted = IS_DEMO ? DEMO_CONFLICTS.has(pull.id) : pull.number % 13 === 0;
   const failing = pull.commits.nodes[0]?.commit.statusCheckRollup?.state === 'FAILURE';
   const status = conflicted ? 'DIRTY' : pull.isDraft ? 'DRAFT' : failing ? 'UNSTABLE' : pull.reviewDecision === 'APPROVED' ? 'CLEAN' : 'BLOCKED';
   return { id: pull.id, mergeable: conflicted ? 'CONFLICTING' : 'MERGEABLE', mergeStateStatus: status };
@@ -19,14 +21,14 @@ function mergeStateOf(pull: FixturePull): { id: string; mergeable: string; merge
 const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   queue: () => JSON.stringify([{ data: { search: { nodes: pulls } } }]),
   merge_states: (args) => JSON.stringify({ data: { nodes: (args.ids as string[]).map((id) => byId.get(id)).filter((pull) => pull != null).map((pull) => mergeStateOf(pull as FixturePull)) } }),
-  body: (args) => generateBody(byNumber.get(args.number as number) ?? pulls[0]!),
-  diff: (args) => generateDiff(byNumber.get(args.number as number) ?? pulls[0]!),
-  conversation: () => JSON.stringify({ data: { repository: { pullRequest: { comments: { totalCount: 2, nodes: [
+  body: (args) => { const pull = byNumber.get(args.number as number) ?? pulls[0]!; return IS_DEMO ? demoBody(pull) : generateBody(pull); },
+  diff: (args) => { const pull = byNumber.get(args.number as number) ?? pulls[0]!; return (IS_DEMO ? demoDiff(pull) : null) ?? generateDiff(pull); },
+  conversation: (args) => IS_DEMO ? JSON.stringify(demoConversation(byNumber.get(args.number as number) ?? pulls[0]!)) : JSON.stringify({ data: { repository: { pullRequest: { comments: { totalCount: 2, nodes: [
     { id: 'c1', bodyHTML: `<p>Long review note.</p>${'<p>Line of detail that goes on for a while to make this comment tall.</p>'.repeat(30)}`, createdAt: '2026-09-26T10:00:00Z', url: 'https://github.com/o/web/pull/1#c1', author: { login: 'reviewer', avatarUrl: '', __typename: 'User' } },
     { id: 'c3', bodyHTML: '<h3>🚀 Web Preview Deployed</h3><p><a href="https://pr-47520.preview.openrouter.ai">https://pr-47520.preview.openrouter.ai</a></p>', createdAt: '2026-09-26T11:30:00Z', url: 'https://github.com/o/web/pull/1#c3', author: { login: 'github-actions', avatarUrl: '', __typename: 'Bot' } },
     { id: 'c2', bodyHTML: '<p>Link to Devin session: <a href="https://openrouter.devinenterprise.com/sessions/38cc6d851fef40258406d2df3132a5c1">session</a></p>', createdAt: '2026-09-26T11:00:00Z', url: 'https://github.com/o/web/pull/1#c2', author: { login: 'devin-ai-integration', avatarUrl: '', __typename: 'Bot' } },
   ] }, reviews: { totalCount: 0, nodes: [] } } } } }),
-  viewer: () => 'someone-else',
+  viewer: () => (IS_DEMO ? 'jordan-lee' : 'someone-else'),
   comment: (args) => `https://github.com/${String(args.repo)}/pull/${String(args.number)}#issuecomment-1`,
   merge_queue: () => JSON.stringify({ data: { repository: { mergeQueue: null } } }),
   readiness_available: () => false,

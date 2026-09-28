@@ -98,3 +98,26 @@ export function flash(element: HTMLElement): void {
   element.classList.add('flash');
   element.addEventListener('animationend', () => element.classList.remove('flash'), { once: true });
 }
+
+const activeScrolls = new WeakMap<HTMLElement, number>();
+const SCROLL_MS = 180;
+
+export function glideScrollTo(element: HTMLElement, target: number): void {
+  const max = element.scrollHeight - element.clientHeight;
+  const destination = Math.max(0, Math.min(max, target));
+  cancelAnimationFrame(activeScrolls.get(element) ?? 0);
+  const start = element.scrollTop;
+  const distance = destination - start;
+  if (Math.abs(distance) < 2 || prefersReducedMotion()) {
+    element.scrollTop = destination;
+    return;
+  }
+  const began = performance.now();
+  const step = (now: number): void => {
+    const progress = Math.min(1, (now - began) / SCROLL_MS);
+    const eased = 1 - (1 - progress) ** 3;
+    element.scrollTop = start + distance * eased;
+    if (progress < 1) activeScrolls.set(element, requestAnimationFrame(step));
+  };
+  activeScrolls.set(element, requestAnimationFrame(step));
+}
