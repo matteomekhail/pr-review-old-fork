@@ -3,7 +3,7 @@ import { ATTENTION_META, ATTENTION_ORDER, attentionReasons, buildAgentPrompt, ne
 import { applyThemeColors, SYSTEM_THEME_ID, THEMES, themeById, type AppTheme } from './themes';
 import { ThemePicker } from './theme-picker';
 import './styles.css';
-import { approvePull, fetchViewerLogin, usesMergeQueue, fetchBody, fetchDiff, fetchMergeStates, fetchQueue, type MergeState, mergePull, openInBrowser, type MergeMethod, type PullRequest, type QueueKind } from './github';
+import { approvePull, commentOnPull, fetchViewerLogin, usesMergeQueue, fetchBody, fetchDiff, fetchMergeStates, fetchQueue, type MergeState, mergePull, openInBrowser, type MergeMethod, type PullRequest, type QueueKind } from './github';
 import { DiffView, parseDiff, type DiffStyle, type ParsedFile } from './diffs';
 import { sanitizeHtml } from './sanitize';
 import { CommandRegistry, renderShortcut, type Command } from './commands';
@@ -17,7 +17,7 @@ import { imageUrlsInHtml, preloadImages } from './image-cache';
 import { routeLinksToBrowser } from './external-links';
 import { isSemanticMatch, semanticMatches } from './semantic-search';
 import { VirtualList, type VirtualRow } from './virtual-list';
-import { loadConversation, type ConversationItem } from './conversation';
+import { invalidateConversation, loadConversation, type ConversationItem } from './conversation';
 import { isReady, isRecent, isSmall, matchesSmartFilter, sortPulls, type SmartFilter, type SortOrder } from './smart';
 import { assessReadiness, isReadinessAvailable, type ReadinessResult } from './readiness';
 
@@ -73,6 +73,11 @@ const dom = {
   bulkCount: element('bulk-count'),
   bulkMerge: element<HTMLButtonElement>('bulk-merge'),
   bulkApprove: element<HTMLButtonElement>('bulk-approve'),
+  commentDialog: element<HTMLDialogElement>('comment-dialog'),
+  commentTitle: element('comment-title'),
+  commentBody: element<HTMLTextAreaElement>('comment-body'),
+  commentHint: element('comment-hint'),
+  commentSend: element<HTMLButtonElement>('comment-send'),
   bulkConfirm: element<HTMLDialogElement>('bulk-confirm'),
   triage: element<HTMLDialogElement>('triage'),
   triageTitle: element('triage-title'),
@@ -662,6 +667,28 @@ function renderConversation(container: Element, items: ConversationItem[]): void
   list.innerHTML = visible.length === 0 ? `<p class="muted">${items.length === 0 ? 'No comments yet.' : 'Only bot comments · hidden.'}</p>` : visible.map(conversationItemHtml).join('');
   list.classList.add('fade-in');
   preloadImages(imageUrlsInHtml(visible.map((item) => item.html).join('')));
+  clampLongComments(list);
+}
+
+const COMMENT_CLAMP_PX = 320;
+
+function clampLongComments(list: Element): void {
+  requestAnimationFrame(() => {
+    list.querySelectorAll<HTMLElement>('.comment-body').forEach((body) => {
+      if (body.scrollHeight <= COMMENT_CLAMP_PX + 40 || body.nextElementSibling?.classList.contains('comment-more')) return;
+      body.classList.add('is-clamped');
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'comment-more';
+      more.textContent = 'Show more';
+      more.addEventListener('click', () => {
+        const isClamped = body.classList.toggle('is-clamped');
+        more.textContent = isClamped ? 'Show more' : 'Show less';
+        if (isClamped) body.closest('.comment')?.scrollIntoView({ block: 'nearest' });
+      });
+      body.after(more);
+    });
+  });
 }
 
 function descriptionSkeleton(): string {
@@ -776,6 +803,7 @@ function syncQueueState(pull: PullRequest): void {
 
 function renderDetail(pull: PullRequest): void {
   syncQueueState(pull);
+  void syncDevinButton(pull);
   dom.crumbs.innerHTML = `<span class="repo" title="${escapeHtml(pull.repository.nameWithOwner)}">${escapeHtml(repoName(pull))}</span><span class="sep">›</span><a class="cur pr-link" href="${escapeHtml(pull.url)}" title="Open on GitHub  O">#${pull.number}</a>`;
   renderDetailMeta(pull);
   const description = renderDescription(pull);
@@ -1638,6 +1666,47 @@ dom.triage.addEventListener('close', () => {
   );
 });
 
+const DEVIN_SESSION_PATTERN = /https:\/\/(?:[a-z0-9-]+\.)*(?:devin\.ai|devinenterprise\.com)\/(?:desktop\/)?sessions?\/[0-9a-f]{16,64}/i;
+
+function devinSessionUrl(html: string): string | null {
+  const match = DEVIN_SESSION_PATTERN.exec(html.replace(/&amp;/g, '&'));
+  return match == null ? null : match[0].replace('/desktop/session/', '/sessions/');
+}
+
+async function findDevinSession(pull: PullRequest): Promise<string | null> {
+  const fromBody = devinSessionUrl(await loadBody(pull).catch(() => ''));
+  if (fromBody != null) return fromBody;
+  const items = await loadConversation(pull).catch((): ConversationItem[] => []);
+  for (const item of items) {
+    const url = devinSessionUrl(item.html);
+    if (url != null) return url;
+  }
+  return null;
+}
+
+async function syncDevinButton(pull: PullRequest): Promise<void> {
+  const button = document.getElementById('open-devin') as HTMLButtonElement | null;
+  if (button == null) return;
+  const url = await findDevinSession(pull);
+  if (selectedPull()?.id !== pull.id) return;
+  button.disabled = url == null;
+  button.dataset.tip = url == null ? 'No Devin session linked on this PR' : 'Open Devin session  D';
+}
+
+async function openDevinSession(): Promise<void> {
+  const pull = selectedPull();
+  if (pull == null) return;
+  const url = await findDevinSession(pull);
+  if (url == null) {
+    toast(`No Devin session linked on #${pull.number}`, true);
+    return;
+  }
+  await openInBrowser(url).then(
+    () => toast(`Opened Devin session for #${pull.number}`),
+    (error: unknown) => toast(errorMessage(error), true),
+  );
+}
+
 function openSelectedOnGitHub(): void {
   const pull = selectedPull();
   if (pull == null) return;
@@ -1681,6 +1750,74 @@ const themePicker = new ThemePicker({
   commit: setTheme,
   cancel: () => applyTheme(),
 });
+
+const commentDrafts = new Map<string, string>();
+let commentTarget: PullRequest | null = null;
+
+function openCommentDialog(): void {
+  const pull = selectedPull();
+  if (pull == null) return;
+  commentTarget = pull;
+  dom.commentTitle.textContent = `Comment on #${pull.number}`;
+  dom.commentHint.textContent = `${pull.repository.nameWithOwner} · ${pull.title}`;
+  dom.commentBody.value = commentDrafts.get(pull.id) ?? '';
+  dom.commentSend.disabled = dom.commentBody.value.trim() === '';
+  dom.commentDialog.showModal();
+  dom.commentBody.focus();
+  dom.commentBody.setSelectionRange(dom.commentBody.value.length, dom.commentBody.value.length);
+}
+
+function closeCommentDialog(): void {
+  if (commentTarget != null) {
+    const draft = dom.commentBody.value;
+    if (draft.trim() === '') commentDrafts.delete(commentTarget.id);
+    else commentDrafts.set(commentTarget.id, draft);
+  }
+  dom.commentDialog.close();
+}
+
+async function submitComment(): Promise<void> {
+  const pull = commentTarget;
+  const body = dom.commentBody.value.trim();
+  if (pull == null || body === '' || dom.commentSend.disabled) return;
+  dom.commentSend.disabled = true;
+  try {
+    await commentOnPull(pull, body);
+    commentDrafts.delete(pull.id);
+    dom.commentBody.value = '';
+    commentTarget = null;
+    dom.commentDialog.close();
+    toast(`Commented on #${pull.number}`);
+    invalidateConversation(pull);
+    if (selectedPull()?.id === pull.id) renderDetail(pull);
+  } catch (error) {
+    toast(errorMessage(error), true);
+    dom.commentSend.disabled = false;
+  }
+}
+
+dom.commentBody.addEventListener('input', () => (dom.commentSend.disabled = dom.commentBody.value.trim() === ''));
+dom.commentBody.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    event.preventDefault();
+    event.stopPropagation();
+    void submitComment();
+    return;
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    closeCommentDialog();
+  }
+});
+dom.commentDialog.addEventListener('cancel', (event) => {
+  event.preventDefault();
+  closeCommentDialog();
+});
+dom.commentSend.addEventListener('click', () => void submitComment());
+element('comment-cancel').addEventListener('click', closeCommentDialog);
+element('comment-button').addEventListener('click', openCommentDialog);
+element('open-devin').addEventListener('click', () => void openDevinSession());
 
 function openThemePicker(): void {
   themePicker.open();
@@ -1761,7 +1898,8 @@ const COMMANDS: Command[] = [
   { id: 'next-file', section: 'Navigate', title: 'Next file', keys: ['n', ']c', '⌥↓'], run: () => moveFile(1), isEnabled: hasFiles },
   { id: 'prev-file', section: 'Navigate', title: 'Previous file', keys: ['p', '[c', '⌥↑'], run: () => moveFile(-1), isEnabled: hasFiles },
   { id: 'media', section: 'Navigate', title: 'Open first image / video / HTML preview', aliases: 'lightbox screenshot media picture gif recording', keys: ['i', '⌘⇧i'], run: () => openMedia(0), isEnabled: hasPull },
-  { id: 'description', section: 'Navigate', title: 'Jump to description', keys: ['d', '⌘↑'], run: () => diffView.scrollToTop(), isEnabled: hasPull },
+  { id: 'description', section: 'Navigate', title: 'Jump to description', keys: ['⌘↑'], run: () => diffView.scrollToTop(), isEnabled: hasPull },
+  { id: 'devin', section: 'Pull request', title: 'Open Devin session', aliases: 'devin agent session link', keys: ['d'], run: () => void openDevinSession(), isEnabled: hasPull },
 
   ...VIM_COMMANDS,
   ...DIFF_SCROLL_COMMANDS,
@@ -1771,6 +1909,7 @@ const COMMANDS: Command[] = [
   { id: 'toggle-all', section: 'Diff', title: 'Collapse / expand all files', aliases: 'fold unfold hide', keys: ['⇧c'], run: toggleAllFiles, isEnabled: hasFiles },
   { id: 'diff-style', section: 'Diff', title: 'Toggle split / unified diff', aliases: 'side by side inline view', keys: ['s', '⌘⌥s'], run: toggleStyle },
 
+  { id: 'comment', section: 'Pull request', title: 'Write a comment', aliases: 'reply message mention devin note', keys: ['c'], run: openCommentDialog, isEnabled: hasPull },
   { id: 'approve', section: 'Pull request', title: 'Approve', aliases: 'lgtm review accept', keys: ['a'], run: () => void approveSelected(), isEnabled: () => { const pull = selectedPull(); return pull != null && !isOwnPull(pull); } },
   { id: 'merge', section: 'Pull request', title: 'Merge (all selected when several are checked)', aliases: 'squash ship land queue', keys: ['⌘↵', 'm'], run: () => void (state.checkedIds.size > 0 ? bulkMerge() : mergeSelected()), isEnabled: () => hasPull() || state.checkedIds.size > 0 },
   { id: 'fix-prompt', section: 'Pull request', title: 'Needs attention → copy agent prompt', aliases: 'triage unapproved broken red failing ci conflict agent devin claude codex prompt clipboard review', keys: ['⇧x'], run: openTriage },
@@ -1811,7 +1950,7 @@ function handleSequence(event: KeyboardEvent): boolean {
 }
 
 document.addEventListener('keydown', (event) => {
-  if ((event.isComposing && !event.altKey) || lightbox.isOpen || palette.isOpen || dom.confirm.open || dom.help.open || dom.bulkConfirm.open || dom.triage.open || themePicker.isOpen) return;
+  if ((event.isComposing && !event.altKey) || lightbox.isOpen || palette.isOpen || dom.confirm.open || dom.help.open || dom.bulkConfirm.open || dom.triage.open || themePicker.isOpen || dom.commentDialog.open) return;
   const target = event.target;
   const isTyping = target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable);
   if (isTyping && (event.key === 'Escape' || (event.key === 'Enter' && !event.metaKey))) {

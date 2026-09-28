@@ -21,15 +21,19 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   merge_states: (args) => JSON.stringify({ data: { nodes: (args.ids as string[]).map((id) => byId.get(id)).filter((pull) => pull != null).map((pull) => mergeStateOf(pull as FixturePull)) } }),
   body: (args) => generateBody(byNumber.get(args.number as number) ?? pulls[0]!),
   diff: (args) => generateDiff(byNumber.get(args.number as number) ?? pulls[0]!),
-  conversation: () => JSON.stringify({ data: { repository: { pullRequest: { comments: { totalCount: 0, nodes: [] }, reviews: { totalCount: 0, nodes: [] } } } } }),
+  conversation: () => JSON.stringify({ data: { repository: { pullRequest: { comments: { totalCount: 2, nodes: [
+    { id: 'c1', bodyHTML: `<p>Long review note.</p>${'<p>Line of detail that goes on for a while to make this comment tall.</p>'.repeat(30)}`, createdAt: '2026-09-26T10:00:00Z', url: 'https://github.com/o/web/pull/1#c1', author: { login: 'reviewer', avatarUrl: '', __typename: 'User' } },
+    { id: 'c2', bodyHTML: '<p>Link to Devin session: <a href="https://openrouter.devinenterprise.com/sessions/38cc6d851fef40258406d2df3132a5c1">session</a></p>', createdAt: '2026-09-26T11:00:00Z', url: 'https://github.com/o/web/pull/1#c2', author: { login: 'devin-ai-integration', avatarUrl: '', __typename: 'Bot' } },
+  ] }, reviews: { totalCount: 0, nodes: [] } } } } }),
   viewer: () => 'someone-else',
+  comment: (args) => `https://github.com/${String(args.repo)}/pull/${String(args.number)}#issuecomment-1`,
   merge_queue: () => JSON.stringify({ data: { repository: { mergeQueue: null } } }),
   readiness_available: () => false,
   review_context: () => { throw new Error('offline harness'); },
   readiness: () => { throw new Error('offline harness'); },
   approve: () => 'ok',
   merge: () => 'ok',
-  open_in_browser: () => undefined,
+  open_in_browser: (args) => { (window as unknown as { __opened: string[] }).__opened = [...((window as unknown as { __opened?: string[] }).__opened ?? []), String(args.url)]; return undefined; },
 };
 
 export async function invoke<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {

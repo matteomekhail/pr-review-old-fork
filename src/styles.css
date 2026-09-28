@@ -536,7 +536,7 @@ button, .chip, .file, #pr-list li { touch-action: manipulation; }
 .review-state { font-weight: 500; }
 .review-state.tone-ok { color: var(--ok); } .review-state.tone-bad { color: var(--bad); }
 .comment.review.tone-ok { border-left: 3px solid var(--ok); } .comment.review.tone-bad { border-left: 3px solid var(--bad); }
-.comment-body { padding: 10px 14px 12px; font-size: 13px; max-height: 420px; overflow: auto; }
+.comment-body { padding: 10px 14px 12px; font-size: 13px; }
 .comment:not(:has(.comment-body)) > header { border-bottom: 0; }
 .comment.is-bot { background: color-mix(in srgb, var(--bg-elev) 70%, var(--bg)); }
 .sk-comment { display: flex; gap: 10px; padding: 10px 0; }
@@ -657,3 +657,18 @@ diffs-container { --diffs-dark-bg: var(--bg); --diffs-light-bg: var(--bg); }
 #merge.merge-icon { border-radius: var(--radius); }
 #pr-list li.group-row .group-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #pr-list li.group-row .group-select { margin-left: auto; }
+#pr-list li.selected, :root[data-theme=light] #pr-list li.selected { background: color-mix(in srgb, var(--accent) 22%, var(--bg)); box-shadow: inset 3px 0 0 var(--accent); }
+#pr-list li.selected .t { color: var(--text); font-weight: 600; }
+#pr-list li.selected:hover { background: color-mix(in srgb, var(--accent) 26%, var(--bg)); }
+#pr-list li.checked.selected, #pr-list.visual li.checked.selected { background: color-mix(in srgb, var(--accent) 30%, var(--bg)); }
+.file.active, :root[data-theme=light] .file.active { background: color-mix(in srgb, var(--accent) 20%, var(--bg)); color: var(--text); }
+#comment-dialog { width: 600px; max-width: 90vw; }
+#comment-dialog textarea { width: 100%; min-height: 140px; max-height: 50vh; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: 13px/1.55 "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, system-ui, sans-serif; outline: none; }
+#comment-dialog textarea:focus { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); }
+#comment-dialog .comment-hint { margin: 8px 0 14px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#comment-dialog button.primary:disabled { opacity: .5; }
+
+.comment-body.is-clamped { max-height: 320px; overflow: hidden; -webkit-mask-image: linear-gradient(#000 calc(100% - 64px), transparent); mask-image: linear-gradient(#000 calc(100% - 64px), transparent); }
+.comment-more { display: block; width: 100%; padding: 6px 14px 10px; border: 0; background: none; color: var(--accent); font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; }
+.comment-more:hover { text-decoration: underline; }
+.comment-body pre, .comment-body table { overflow-x: auto; overscroll-behavior-y: auto; }

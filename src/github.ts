@@ -99,6 +99,10 @@ export function fetchViewerLogin(): Promise<string | null> {
   return viewerLogin;
 }
 
+export function commentOnPull(pull: PullRequest, body: string): Promise<string> {
+  return invoke<string>('comment', { repo: pull.repository.nameWithOwner, number: pull.number, body });
+}
+
 export function approvePull(pull: PullRequest): Promise<string> {
   return invoke<string>('approve', { repo: pull.repository.nameWithOwner, number: pull.number });
 }

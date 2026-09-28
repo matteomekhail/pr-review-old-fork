@@ -204,6 +204,18 @@ async fn approve(repo: String, number: u64) -> Result<String, String> {
     gh(&["pr", "review", &number.to_string(), "-R", &repo, "--approve"]).await
 }
 
+const MAX_COMMENT_BYTES: usize = 65_000;
+
+#[tauri::command]
+async fn comment(repo: String, number: u64, body: String) -> Result<String, String> {
+    validate_repo(&repo)?;
+    if body.trim().is_empty() || body.len() > MAX_COMMENT_BYTES {
+        return Err("comment must be between 1 and 65000 bytes".to_string());
+    }
+    let path = format!("repos/{repo}/issues/{number}/comments");
+    gh(&["api", &path, "-X", "POST", "-f", &format!("body={body}"), "--jq", ".html_url"]).await.map(|url| url.trim().to_string())
+}
+
 #[tauri::command]
 async fn viewer() -> Result<String, String> {
     gh(&["api", "user", "--jq", ".login"]).await.map(|login| login.trim().to_string())
@@ -350,7 +362,7 @@ async fn open_in_browser(url: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![queue, viewer, merge_queue, merge_states, conversation, body, diff, approve, merge, open_in_browser, review_context, readiness_available, readiness])
+        .invoke_handler(tauri::generate_handler![queue, viewer, comment, merge_queue, merge_states, conversation, body, diff, approve, merge, open_in_browser, review_context, readiness_available, readiness])
         .run(tauri::generate_context!())
         .expect("error while running PR Review");
 }

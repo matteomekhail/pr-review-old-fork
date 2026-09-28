@@ -74,6 +74,10 @@ async function fetchConversation(pull: PullRequest): Promise<ConversationItem[]>
   return [...comments, ...reviews].sort((left, right) => Date.parse(left.at) - Date.parse(right.at));
 }
 
+export function invalidateConversation(pull: PullRequest): void {
+  [...cache.keys()].filter((key) => key.startsWith(`${pull.id}:`)).forEach((key) => cache.delete(key));
+}
+
 export function loadConversation(pull: PullRequest): Promise<ConversationItem[]> {
   const key = `${pull.id}:${pull.updatedAt}`;
   const cached = cache.get(key);
