@@ -22,7 +22,7 @@ A fast, keyboard-first macOS app for reviewing and merging GitHub pull requests.
 - **Merge queue:** PRs already in a queue show a yellow marker with their position, and queued merges skip the confirmation.
 - **Themes:** press `T` for a live-preview picker with 20 IDE themes (Catppuccin Mocha/Macchiato/Frappé/Latte, Tokyo Night, Dracula, One Dark Pro, GitHub Dark/Light, Nord, Gruvbox, Rosé Pine, Solarized, Monokai, Night Owl, Kanagawa, Vesper) or follow macOS. Syntax highlighting in diffs uses the matching editor theme.
 - **Bulk actions:** select with `E` / `⇧J` / `⇧R`, then approve or merge in sequence with per-PR error reporting.
-- **Keyboard:** Linear-style single keys, VS Code chords, vim motions, and a `⌘K` command menu. `?` lists every shortcut.
+- **Keyboard:** Linear-style single keys, VS Code chords, and vim motions. `?` lists every shortcut.
 
 ## How it talks to GitHub
 
@@ -85,18 +85,18 @@ Vim motions work the same in every pane; the modifier picks the pane.
 | Line down / up | `⌃E` / `⌃Y` (or `⌃N` / `⌃P`) | `⌥E` / `⌥Y` (or `⌥J` / `⌥K`) | `⌘E` / `⌘Y` |
 | Top / bottom | `⌃G` / `⌃⇧G` | `⌥G` / `⌥⇧G` | `⌘G` / `⌘⇧G` |
 
-`⌘J` scrolls the diff down; `⌘K` opens the command menu and `/` focuses the filter. The middle pane is the description and the right pane is the diff.
+`⌘J` / `⌘K` scroll the diff; `/` focuses the filter. The middle pane is the description and the right pane is the diff.
 
 | Area | Keys |
 | --- | --- |
 | Queue | `J`/`K` next/prev · `gg`/`G` first/last · `Space`/`⇧Space` page the middle pane |
 | Files | `N` or `]c`/`[c` next/prev file · `X` collapse · `S` split/unified |
-| Filters | `⇧T` group related work · `⌥1` Ready · `⌥4` Unready · `⌥0` All (Small `⌥2`, Recent `⌥3`, Tested `⌥5` via `⌘K`) · `⇧S` sort · `⇧X` fix with agent · `⇧U` select unready · `⇧R` select ready |
+| Filters | `⇧T` group related work · `⌥1` Ready · `⌥4` Unready · `⌥0` All (Small `⌥2`, Recent `⌥3`, Tested `⌥5`) · `⇧S` sort · `⇧X` fix with agent · `⇧U` select unready · `⇧R` select ready |
 | Select | `⇧V` visual mode (then `J`/`K`) · `E` toggle · `⇧J`/`⇧K` extend · `⇧R` all ready · `⌘A` all · `Esc` clear |
 | Act | `⇧X` copy an agent prompt to fix every PR with conflicts or failing checks (or just the selected ones) · `O` open on GitHub (in Chrome) · `A` approve · `⌘↵` merge (all selected when several are checked) · `⇧A` bulk approve · `⌘↵` bulk merge |
 | Layout | `T` theme picker · `⌘B` PR list · `1` review · `2` diff focus · `3` read description · `⌘.` focus |
 | Lightbox | `I` open first media · `H`/`L` or `J`/`K` or `←`/`→` cycle · `gg`/`G` first/last · `⌃D`/`⌃U` skip half · `Z` zoom · `O` open · `Q`/`Esc` close |
-| General | `⌘K` commands · `/` filter · `?` shortcuts · `R` refresh |
+| General | `/` filter · `?` shortcuts · `R` refresh |
 
 ## Credits
 

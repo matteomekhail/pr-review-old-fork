@@ -10,7 +10,6 @@ import { approvePull, commentOnPull, fetchViewerLogin, usesMergeQueue, fetchBody
 import { DiffView, parseDiff, type DiffStyle, type ParsedFile } from './diffs';
 import { sanitizeHtml } from './sanitize';
 import { CommandRegistry, renderShortcut, type Command } from './commands';
-import { CommandPalette } from './palette';
 import { Layout, type LayoutPreset } from './layout';
 import { Lightbox, collectMedia } from './lightbox';
 import { enableWindowDrag } from './window-drag';
@@ -1635,7 +1634,6 @@ function openMediaFrom(target: HTMLElement): boolean {
 const listPane = element('list-pane');
 new ResizeObserver(([entry]) => listPane.classList.toggle('narrow', (entry?.contentRect.width ?? 999) < 400)).observe(listPane);
 const commands = new CommandRegistry();
-const palette = new CommandPalette(commands);
 const hasPull = (): boolean => selectedPull() != null;
 const hasFiles = (): boolean => currentFiles.length > 0;
 
@@ -1928,10 +1926,10 @@ const VIM_COMMANDS = vimCommands();
 
 const DIFF_SCROLL_COMMANDS: Command[] = [
   { id: 'diff-scroll-down', section: 'Diff', title: 'Scroll diff down', aliases: 'vim line', keys: ['⌘j'], run: () => diffView.stepBy(DIFF_LINE_PX * 2), isEnabled: hasPull },
+  { id: 'diff-scroll-up', section: 'Diff', title: 'Scroll diff up', aliases: 'vim line', keys: ['⌘k'], run: () => diffView.stepBy(-DIFF_LINE_PX * 2), isEnabled: hasPull },
 ];
 
 const COMMANDS: Command[] = [
-  { id: 'palette', allowWhileTyping: true, section: 'General', title: 'Open command menu', keys: ['⌘k', '⌘⇧p'], run: () => palette.open() },
   { id: 'help', section: 'General', title: 'Keyboard shortcuts', keys: ['?', '⌘/'], run: openHelp },
   { id: 'filter', section: 'General', title: 'Filter pull requests', keys: ['/', '⌘f'], run: () => { dom.filter.focus(); dom.filter.select(); const box = dom.filter.closest<HTMLElement>('.search'); if (box != null) flash(box); } },
   { id: 'refresh', allowWhileTyping: true, section: 'General', title: 'Refresh', keys: ['r', '⌘r'], run: manualRefresh },
@@ -2028,7 +2026,7 @@ function handleSequence(event: KeyboardEvent): boolean {
 }
 
 document.addEventListener('keydown', (event) => {
-  if ((event.isComposing && !event.altKey) || lightbox.isOpen || palette.isOpen || dom.confirm.open || dom.help.open || dom.bulkConfirm.open || dom.triage.open || themePicker.isOpen || dom.commentDialog.open) return;
+  if ((event.isComposing && !event.altKey) || lightbox.isOpen || dom.confirm.open || dom.help.open || dom.bulkConfirm.open || dom.triage.open || themePicker.isOpen || dom.commentDialog.open) return;
   const target = event.target;
   const isTyping = target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable);
   if (isTyping && (event.key === 'Escape' || (event.key === 'Enter' && !event.metaKey))) {
@@ -2098,7 +2096,6 @@ dom.filter.addEventListener('input', () => {
   scheduleSemanticSearch();
 });
 element('toggle-sidebar').addEventListener('click', () => layout.toggle('list'));
-element('open-palette').addEventListener('click', () => palette.open());
 element('open-help').addEventListener('click', openHelp);
 element('open-github').addEventListener('click', openSelectedOnGitHub);
 element('refresh-button').addEventListener('click', manualRefresh);
