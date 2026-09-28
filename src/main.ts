@@ -62,7 +62,6 @@ const dom = {
   toggleAll: element<HTMLButtonElement>('toggle-all'),
   approve: element<HTMLButtonElement>('approve'),
   merge: element<HTMLButtonElement>('merge'),
-  mergeMethod: element<HTMLSelectElement>('merge-method'),
   confirm: element<HTMLDialogElement>('confirm'),
   confirmTitle: element('confirm-title'),
   confirmText: element('confirm-text'),
@@ -108,17 +107,16 @@ let toastTimer: number | undefined;
 
 const MERGE_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="4.5" cy="12.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="11.5" cy="8" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.5 5.1v5.8M4.5 5.1c0 2.4 2.2 2.9 5.4 2.9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 
-dom.mergeMethod.value = localStorage.getItem('mergeMethod') ?? 'squash';
+const MERGE_METHOD: MergeMethod = 'squash';
 syncMergeLabel();
 
 
 function syncMergeLabel(): void {
   const selectedCount = state.checkedIds.size;
-  const baseLabel = isSelectedQueued ? 'Merge when ready' : MERGE_LABELS[dom.mergeMethod.value as MergeMethod];
+  const baseLabel = isSelectedQueued ? 'Merge when ready' : MERGE_LABELS[MERGE_METHOD];
   const label = selectedCount > 0 ? `${isSelectedQueued ? 'Queue' : 'Merge'} ${selectedCount} selected` : baseLabel;
-  dom.merge.innerHTML = `${MERGE_ICON}${selectedCount > 0 ? `<span class="merge-count">${selectedCount}</span>` : ''}`;
+  dom.merge.innerHTML = `${MERGE_ICON}${selectedCount > 0 ? `<span class="merge-count">${selectedCount}</span>` : ''}<kbd>⌘</kbd><kbd>↵</kbd>`;
   dom.merge.title = `${label}  ⌘↵`;
-  dom.mergeMethod.hidden = isSelectedQueued;
 }
 
 type ToastTone = 'info' | 'success' | 'error';
@@ -504,14 +502,10 @@ function groupHeader(section: ListSection): string {
   const group = section.group;
   if (group == null) return '';
   const isCollapsed = collapsedGroups.has(group.id);
-  const ready = section.pulls.filter(isReady).length;
-  const lines = section.pulls.reduce((total, pull) => total + pull.additions + pull.deletions, 0);
-  const readiness = Math.round(Math.max(0, Math.min(1, averageReadiness(section.pulls))) * 100);
   return `<li class="group-row${isCollapsed ? ' collapsed' : ''}" data-group="${escapeHtml(group.id)}">
     <span class="caret">›</span>
     <span class="group-label" title="${escapeHtml(group.label)}">${escapeHtml(group.label)}</span>
-    <span class="group-meta"><span class="group-count">${section.pulls.length}</span>${ready > 0 ? `<span class="group-ready" title="${ready} ready to merge"><i class="dot-ok"></i>${ready}</span>` : ''}<span class="group-lines">${lines.toLocaleString()} lines</span>${isAiEnabled ? `<span class="ai-score ${readiness >= 65 ? 'ok' : readiness >= 40 ? 'wait' : 'bad'}" title="Average readiness">${readiness}</span>` : ''}
-    <button class="group-select" data-group-select="${escapeHtml(group.id)}" title="Select all in group">Select</button></span>
+    <button class="group-select" data-group-select="${escapeHtml(group.id)}" title="Select all ${section.pulls.length} in group">Select</button>
   </li>`;
 }
 
@@ -1437,7 +1431,7 @@ function confirmBulkMerge(pulls: PullRequest[], method: MergeMethod): Promise<bo
 async function bulkMerge(): Promise<void> {
   const pulls = checkedPulls().filter((pull) => !pull.isDraft && pull.mergeable !== 'CONFLICTING');
   if (pulls.length === 0) return;
-  const method = dom.mergeMethod.value as MergeMethod;
+  const method = MERGE_METHOD;
   const queueFlags = await Promise.all(pulls.map(usesMergeQueue));
   const isAllQueued = queueFlags.every(Boolean);
   if (!isAllQueued && !(await confirmBulkMerge(pulls, method))) return;
@@ -1514,7 +1508,7 @@ function confirmMerge(pull: PullRequest, method: MergeMethod): Promise<boolean> 
 async function mergeSelected(): Promise<void> {
   const pull = selectedPull();
   if (pull == null || dom.merge.disabled) return;
-  const method = dom.mergeMethod.value as MergeMethod;
+  const method = MERGE_METHOD;
   const isQueued = await usesMergeQueue(pull);
   if (!isQueued && !(await confirmMerge(pull, method))) return;
   dom.merge.disabled = true;
@@ -1588,15 +1582,6 @@ const commands = new CommandRegistry();
 const palette = new CommandPalette(commands);
 const hasPull = (): boolean => selectedPull() != null;
 const hasFiles = (): boolean => currentFiles.length > 0;
-
-function cycleMergeMethod(): void {
-  const methods: MergeMethod[] = ['squash', 'merge', 'rebase'];
-  const next = methods[(methods.indexOf(dom.mergeMethod.value as MergeMethod) + 1) % methods.length] ?? 'squash';
-  dom.mergeMethod.value = next;
-  localStorage.setItem('mergeMethod', next);
-  syncMergeLabel();
-  toast(`Merge method: ${MERGE_LABELS[next]}`);
-}
 
 const TESTED_THRESHOLD = 0.75;
 
@@ -1788,7 +1773,6 @@ const COMMANDS: Command[] = [
 
   { id: 'approve', section: 'Pull request', title: 'Approve', aliases: 'lgtm review accept', keys: ['a'], run: () => void approveSelected(), isEnabled: () => { const pull = selectedPull(); return pull != null && !isOwnPull(pull); } },
   { id: 'merge', section: 'Pull request', title: 'Merge (all selected when several are checked)', aliases: 'squash ship land queue', keys: ['⌘↵', 'm'], run: () => void (state.checkedIds.size > 0 ? bulkMerge() : mergeSelected()), isEnabled: () => hasPull() || state.checkedIds.size > 0 },
-  { id: 'merge-method', section: 'Pull request', title: 'Cycle merge method', keys: ['⇧m'], run: cycleMergeMethod },
   { id: 'fix-prompt', section: 'Pull request', title: 'Needs attention → copy agent prompt', aliases: 'triage unapproved broken red failing ci conflict agent devin claude codex prompt clipboard review', keys: ['⇧x'], run: openTriage },
   { id: 'open', section: 'Pull request', title: 'Open on GitHub', aliases: 'browser link url web', keys: ['o', '⌘o', 'g o'], run: openSelectedOnGitHub, isEnabled: hasPull },
   { id: 'copy-url', section: 'Pull request', title: 'Copy link', keys: ['⌘⇧c', 'y'], run: () => { const pull = selectedPull(); if (pull != null) copyText(pull.url, 'link'); }, isEnabled: hasPull },
@@ -1933,10 +1917,6 @@ dom.bulkMerge.addEventListener('click', () => void bulkMerge());
 syncPaneButtons();
 dom.approve.addEventListener('click', () => void approveSelected());
 dom.merge.addEventListener('click', () => void (state.checkedIds.size > 0 ? bulkMerge() : mergeSelected()));
-dom.mergeMethod.addEventListener('change', () => {
-  localStorage.setItem('mergeMethod', dom.mergeMethod.value);
-  syncMergeLabel();
-});
 window.addEventListener('focus', () => void refresh(state.kind));
 window.setInterval(() => {
   if (document.visibilityState === 'visible') void refresh(state.kind);
