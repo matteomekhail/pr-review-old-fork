@@ -604,6 +604,49 @@ function checksLabel(pull: PullRequest): { label: string; tone: string } {
 
 
 
+function skeletonLine(width: string, extra = ''): string {
+  return `<span class="sk-line ${extra}" style="width:${width}"></span>`;
+}
+
+function descriptionSkeleton(): string {
+  return `<div class="skeleton" aria-label="Loading description" aria-busy="true">
+    ${skeletonLine('22%', 'sk-heading')}
+    ${skeletonLine('96%')}${skeletonLine('88%')}${skeletonLine('64%')}
+    ${skeletonLine('30%', 'sk-heading')}
+    ${skeletonLine('92%')}${skeletonLine('81%')}${skeletonLine('86%')}${skeletonLine('48%')}
+    <span class="sk-block"></span>
+  </div>`;
+}
+
+function filesSkeleton(): string {
+  const widths = ['62%', '48%', '74%', '55%', '68%', '40%'];
+  return `<div class="skeleton files-skeleton" aria-busy="true">${widths.map((width) => `<div class="sk-file"><span class="sk-line" style="width:${width}"></span><span class="sk-line sk-count"></span></div>`).join('')}</div>`;
+}
+
+function diffSkeleton(): string {
+  const cards = [9, 6, 11].map((lines, card) => `<div class="sk-diff-card">
+      <div class="sk-diff-head"><span class="sk-dot"></span><span class="sk-line" style="width:${[44, 58, 36][card]}%"></span></div>
+      ${Array.from({ length: lines }, (_, line) => `<div class="sk-diff-row"><span class="sk-gutter"></span><span class="sk-line${line % 4 === 1 ? ' sk-add' : line % 5 === 3 ? ' sk-del' : ''}" style="width:${35 + ((line * 37 + card * 13) % 55)}%"></span></div>`).join('')}
+    </div>`);
+  return `<div class="skeleton diff-skeleton" aria-busy="true">${cards.join('')}</div>`;
+}
+
+function showDiffLoading(isLoading: boolean): void {
+  let overlay = document.getElementById('diff-loading');
+  if (!isLoading) {
+    overlay?.classList.add('done');
+    window.setTimeout(() => overlay?.remove(), 180);
+    return;
+  }
+  if (overlay == null) {
+    overlay = document.createElement('div');
+    overlay.id = 'diff-loading';
+    dom.diffRoot.parentElement?.insertBefore(overlay, dom.diffRoot);
+  }
+  overlay.classList.remove('done');
+  overlay.innerHTML = diffSkeleton();
+}
+
 function descriptionHtml(bodyHtml: string): string {
   return bodyHtml.trim() === '' ? '<p class="muted">No description provided.</p>' : sanitizeHtml(bodyHtml);
 }
@@ -611,7 +654,7 @@ function descriptionHtml(bodyHtml: string): string {
 function renderDescription(pull: PullRequest): HTMLElement {
   const wrapper = document.createElement('article');
   wrapper.className = 'description';
-  const body = '<p class="muted loading-body">Loading description…</p>';
+  const body = descriptionSkeleton();
   wrapper.innerHTML = `
     <h1>${escapeHtml(pull.title)}</h1>
     <div class="byline">${avatar(pull)}<b>${escapeHtml(pull.author?.login ?? 'ghost')}</b> opened ${relativeTime(pull.createdAt)} ago · <code>${escapeHtml(pull.headRefName)}</code> → <code>${escapeHtml(pull.baseRefName)}</code></div>
@@ -685,7 +728,10 @@ function renderDetail(pull: PullRequest): void {
     (bodyHtml) => {
       if (token !== renderToken) return;
       const target = description.querySelector('.markdown');
-      if (target != null) target.innerHTML = descriptionHtml(bodyHtml);
+      if (target != null) {
+        target.innerHTML = descriptionHtml(bodyHtml);
+        target.classList.add('fade-in');
+      }
     },
     (error: unknown) => {
       if (token !== renderToken) return;
@@ -775,10 +821,18 @@ async function select(pull: PullRequest): Promise<void> {
   currentFiles = [];
   diffView.show([]);
   renderDetail(pull);
-  dom.files.innerHTML = '<div class="muted pad">Loading…</div>';
+  const diffPromise = loadDiff(pull);
+  let isSettled = false;
+  void diffPromise.finally(() => (isSettled = true)).catch(() => undefined);
+  const skeletonTimer = window.setTimeout(() => {
+    if (isSettled || token !== renderToken) return;
+    dom.files.innerHTML = filesSkeleton();
+    dom.fileCount.textContent = '';
+    showDiffLoading(true);
+  }, 60);
   prefetchAround(pull);
   try {
-    const files = await loadDiff(pull);
+    const files = await diffPromise;
     if (token !== renderToken) return;
     currentFiles = files;
     diffView.show(files);
@@ -786,6 +840,9 @@ async function select(pull: PullRequest): Promise<void> {
   } catch (error) {
     if (token !== renderToken) return;
     dom.files.innerHTML = `<div class="error pad">${escapeHtml(errorMessage(error))}</div>`;
+  } finally {
+    window.clearTimeout(skeletonTimer);
+    if (token === renderToken) showDiffLoading(false);
   }
 }
 

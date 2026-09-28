@@ -480,3 +480,29 @@ img { -webkit-user-drag: none; }
 #pr-head .actions button.ghost, #pr-head .actions button.primary, .split-button select { height: 26px; }
 #pr-head .icon-button { width: 26px; height: 26px; }
 .search { height: 26px; }
+
+.skeleton { display: flex; flex-direction: column; gap: 10px; padding: 6px 0 12px; }
+.sk-line, .sk-block, .sk-dot, .sk-gutter { display: block; border-radius: 5px; background: linear-gradient(90deg, var(--bg-hover) 0%, var(--bg-active) 40%, var(--bg-hover) 80%); background-size: 300% 100%; animation: shimmer 1.4s ease-in-out infinite; }
+.sk-line { height: 11px; }
+.sk-heading { height: 15px; margin-top: 8px; border-radius: 6px; }
+.sk-block { height: 72px; border-radius: 8px; margin-top: 6px; }
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+.files-skeleton { gap: 0; padding: 2px 8px 10px; }
+.sk-file { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 26px; padding: 0 8px; }
+.sk-file .sk-count { width: 34px; height: 9px; flex: none; }
+#diff-loading { position: absolute; inset: 0; z-index: 3; overflow: hidden; background: var(--bg); padding: 12px 16px; transition: opacity .18s; pointer-events: none; }
+#diff-loading.done { opacity: 0; }
+#pr-body-split, #inspector { position: relative; }
+#app.mode-side #inspector #diff-loading { top: auto; }
+.diff-skeleton { gap: 14px; padding: 0; }
+.sk-diff-card { border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; }
+.sk-diff-head { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-bottom: 1px solid var(--border-soft); background: var(--bg-elev); }
+.sk-dot { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+.sk-diff-row { display: flex; align-items: center; gap: 14px; height: 19px; padding: 0 12px; }
+.sk-gutter { width: 22px; height: 9px; flex: none; opacity: .6; }
+.sk-diff-row .sk-line { height: 9px; }
+.sk-add { background: linear-gradient(90deg, rgb(76 183 130 / .12) 0%, rgb(76 183 130 / .24) 40%, rgb(76 183 130 / .12) 80%); background-size: 300% 100%; }
+.sk-del { background: linear-gradient(90deg, rgb(235 87 87 / .12) 0%, rgb(235 87 87 / .22) 40%, rgb(235 87 87 / .12) 80%); background-size: 300% 100%; }
+.fade-in { animation: fade-in .22s ease-out; }
+@keyframes fade-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .sk-line, .sk-block, .sk-dot, .sk-gutter { animation: none; } .fade-in { animation: none; } }
