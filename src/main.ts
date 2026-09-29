@@ -1,5 +1,6 @@
 import { hydrateIcons, icon } from './icons';
 import { attachScrollFade } from './scroll-fade';
+import { startAutoUpdate } from './updater';
 import { StableOrder } from './stable-order';
 import { watchKbdGlyphs } from './kbd-glyphs';
 import { animateDialogCancel, flash, glideScrollBy, glideScrollTo, setVisibleWithMotion } from './motion';
@@ -2031,6 +2032,7 @@ const DIFF_SCROLL_COMMANDS: Command[] = [
 ];
 
 const COMMANDS: Command[] = [
+  { id: 'update', section: 'General', title: 'Check for updates / restart into update', aliases: 'upgrade version release', keys: ['⌘⇧u'], run: () => (restartIntoUpdate != null ? restartIntoUpdate() : (toast('Checking for updates…'), checkForUpdates())) },
   { id: 'help', section: 'General', title: 'Keyboard shortcuts', keys: ['?', '⌘/'], run: openHelp },
   { id: 'filter', section: 'General', title: 'Filter pull requests', keys: ['/', '⌘f'], run: () => { dom.filter.focus(); dom.filter.select(); const box = dom.filter.closest<HTMLElement>('.search'); if (box != null) flash(box); } },
   { id: 'refresh', allowWhileTyping: true, section: 'General', title: 'Refresh', keys: ['r', '⌘r'], run: manualRefresh },
@@ -2260,6 +2262,20 @@ void isReadinessAvailable().then((isAvailable) => {
   if (isAvailable) void scoreWithJev(state.pulls);
   if (isAvailable) void ensureGroups();
 });
+
+const checkForUpdates = startAutoUpdate({
+  onReady: (version, restart) => {
+    const pill = document.getElementById('update-pill');
+    if (pill == null) return;
+    pill.hidden = false;
+    pill.dataset.tip = `PR Review ${version} is installed. Restart to use it  ⌘⇧U`;
+    pill.onclick = restart;
+    restartIntoUpdate = restart;
+    toast(`Updated to ${version} · restart when ready (⌘⇧U)`);
+  },
+  onError: (message) => toast(`Update check failed: ${message}`, true),
+});
+let restartIntoUpdate: (() => void) | null = null;
 
 renderBootSkeletons();
 void refresh(state.kind, true).then(() => {

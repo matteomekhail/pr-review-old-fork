@@ -30,6 +30,20 @@ All GitHub access goes through your existing [GitHub CLI](https://cli.github.com
 
 ## Install
 
+```bash
+gh repo clone sunwrobert/pr-review /tmp/pr-review-src -- -q && bash /tmp/pr-review-src/scripts/install.sh
+```
+
+This downloads the latest signed release into `/Applications`. From then on the app updates itself: it checks GitHub Releases at launch, when focused and every 30 minutes, downloads and installs in the background, and shows an **Update** pill (or `⌘⇧U`) to restart into the new version. Use `--from-source` to build locally instead.
+
+## Releases
+
+Every push to `main` runs `.github/workflows/release.yml` on macOS: typecheck and tests, bump the patch version from the latest `v*` tag (`scripts/release-version.ts`), build a universal (Apple Silicon + Intel) app, sign the update with the updater key, and publish a GitHub Release with `latest.json`. Bump the major or minor in `src-tauri/tauri.conf.json` to start a new line.
+
+One-time setup: add the updater private key as repo secrets `TAURI_SIGNING_PRIVATE_KEY` (contents of `~/.tauri/pr-review.key`) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (empty). The matching public key is in `tauri.conf.json`, so the app only installs updates signed with it. The app is not Apple-notarized; the installer strips the quarantine flag.
+
+## Install from source
+
 One step: builds from source and installs to `/Applications` (re-run to update):
 
 ```bash

@@ -43,6 +43,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.png"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENFOUU4NDk4N0RFOTE4Q0MKUldUTUdPbDltSVNlemsyVXRyOTVxYkV6cWRDVHBteFhHUGZ0QUNjenI1cEoyN0hLc0lWV3Zmb1MK",
+      "endpoints": [
+        "https://github.com/sunwrobert/pr-review/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

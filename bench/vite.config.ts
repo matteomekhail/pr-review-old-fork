@@ -11,6 +11,8 @@ export default defineConfig({
     alias: {
       '@tauri-apps/api/core': fileURLToPath(new URL('./shim/tauri-core.ts', import.meta.url)),
       '@tauri-apps/api/window': fileURLToPath(new URL('./shim/tauri-window.ts', import.meta.url)),
+      '@tauri-apps/plugin-updater': fileURLToPath(new URL('./shim/tauri-updater.ts', import.meta.url)),
+      '@tauri-apps/plugin-process': fileURLToPath(new URL('./shim/tauri-process.ts', import.meta.url)),
     },
   },
   worker: { format: 'es' },

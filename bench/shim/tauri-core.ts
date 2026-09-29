@@ -51,3 +51,12 @@ export async function invoke<T>(command: string, args: Record<string, unknown> =
   if (LATENCY_MS > 0) await new Promise((resolve) => setTimeout(resolve, LATENCY_MS));
   return (await handler(args)) as T;
 }
+
+export class Resource {
+  constructor(readonly rid: number) {}
+  async close(): Promise<void> {}
+}
+
+export class Channel<T> {
+  onmessage: (message: T) => void = () => undefined;
+}
