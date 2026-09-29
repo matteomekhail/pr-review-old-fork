@@ -84,7 +84,7 @@ export class VirtualList {
   private placeHighlight(): void {
     const index = this.highlightedKey == null ? -1 : this.indexOf(this.highlightedKey);
     if (index < 0) {
-      if (this.highlightTop != null) this.highlight.classList.remove('visible');
+      this.highlight.classList.remove('visible');
       this.highlightTop = null;
       return;
     }

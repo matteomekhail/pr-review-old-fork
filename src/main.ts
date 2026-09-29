@@ -1,5 +1,6 @@
 import { hydrateIcons, icon } from './icons';
 import { attachScrollFade } from './scroll-fade';
+import { StableOrder } from './stable-order';
 import { watchKbdGlyphs } from './kbd-glyphs';
 import { animateDialogCancel, flash, glideScrollBy, glideScrollTo, setVisibleWithMotion } from './motion';
 import { ATTENTION_META, ATTENTION_ORDER, attentionReasons, buildAgentPrompt, needsAttention, prStatus, type AttentionReason } from './status';
@@ -231,6 +232,7 @@ function matchesText(pull: PullRequest, needle: string): boolean {
 function renderSearchState(): void {
   const box = dom.filter.closest('.search');
   box?.classList.toggle('searching', isSemanticLoading);
+  renderListEmpty(filteredPulls().length, state.filter.trim().toLowerCase());
 }
 
 function scheduleSemanticSearch(): void {
@@ -266,6 +268,8 @@ function scheduleSemanticSearch(): void {
   }, SEMANTIC_DEBOUNCE_MS);
 }
 
+const stableOrder = new StableOrder();
+const leaving = new Map<string, { pull: PullRequest; label: string }>();
 let listCacheKey = '';
 let filteredCache: PullRequest[] = [];
 let visibleCache: PullRequest[] = [];
@@ -276,7 +280,7 @@ function invalidateList(): void {
 }
 
 function currentListKey(): string {
-  return [listVersion, state.pulls, state.filter, state.smartFilter, state.sortOrder, isGrouped, groups, semanticQuery, semanticScores, aiResults.size, collapsedGroups.size].map((part) => (typeof part === 'object' ? objectId(part) : String(part))).join('|');
+  return [listVersion, leaving.size, state.pulls, state.filter, state.smartFilter, state.sortOrder, isGrouped, groups, semanticQuery, semanticScores, aiResults.size, collapsedGroups.size].map((part) => (typeof part === 'object' ? objectId(part) : String(part))).join('|');
 }
 
 const objectIds = new WeakMap<object, number>();
@@ -291,6 +295,12 @@ function objectId(value: object): string {
   return String(id);
 }
 
+function withLeaving(ranked: PullRequest[]): PullRequest[] {
+  if (leaving.size === 0) return ranked;
+  const present = new Set(ranked.map((pull) => pull.id));
+  return [...ranked, ...[...leaving.values()].filter((entry) => !present.has(entry.pull.id)).map((entry) => entry.pull)];
+}
+
 function computeLists(): void {
   const key = currentListKey();
   if (key === listCacheKey) return;
@@ -298,7 +308,8 @@ function computeLists(): void {
   const needle = state.filter.trim().toLowerCase();
   const now = Date.now();
   const matching = state.pulls.filter((pull) => (state.smartFilter === 'attention' ? isMergeStateSettled(pull) && needsAttention(pull) : state.smartFilter === 'tested' ? isTested(pull) : matchesSmartFilter(pull, state.smartFilter, now)) && matchesText(pull, needle));
-  filteredCache = sortPulls(matching, state.sortOrder, now, aiScoreFor);
+  const ranked = sortPulls(matching, state.sortOrder, now, aiScoreFor);
+  filteredCache = stableOrder.apply(withLeaving(ranked), [state.kind, state.smartFilter, state.sortOrder, needle, isGrouped].join('|'));
   visibleCache = !isGrouped || groups.length === 0 ? filteredCache : listSections(filteredCache).flatMap((section) => (section.group != null && collapsedGroups.has(section.group.id) ? [] : section.pulls));
 }
 
@@ -524,13 +535,35 @@ const virtualList = new VirtualList(dom.list);
 
 function rowHtml(pull: PullRequest, primaryRepo: string | undefined, needle: string): string {
   const isChecked = state.checkedIds.has(pull.id);
-  return `<li data-key="${pull.id}" data-id="${pull.id}" class="${pull.id === state.selectedId ? 'selected' : ''}${isChecked ? ' checked' : ''}${pull.queueEntry != null ? ' queued' : ''}">
+  const exit = leaving.get(pull.id);
+  return `<li data-key="${pull.id}" data-id="${pull.id}" class="${pull.id === state.selectedId ? 'selected' : ''}${isChecked ? ' checked' : ''}${pull.queueEntry != null ? ' queued' : ''}${exit != null ? ' leaving' : ''}"${exit != null ? ` data-leaving="${escapeHtml(exit.label)}"` : ''}>
         <span class="check-box" data-check="${pull.id}" role="checkbox" aria-checked="${isChecked}" title="Select  E / ⇧V"></span>
         ${statusIcon(pull)}
         <span class="id" title="${escapeHtml(pull.repository.nameWithOwner)}">${repoTag(pull, primaryRepo)}#${pull.number}</span>
         <span class="t">${escapeHtml(pull.title)}</span>
         <span class="right">${pull.queueEntry != null ? `<span class="queue-pill" title="${escapeHtml(queueLabel(pull))}">Queued</span>` : ''}${readinessDot(pull)}${checksIcon(pull)}<span class="delta"><i class="add">+${pull.additions}</i> <i class="del">−${pull.deletions}</i></span><span class="age">${relativeTime(pull.updatedAt)}</span>${avatar(pull)}</span>
       </li>`;
+}
+
+function renderListEmpty(count: number, needle: string): void {
+  const box = document.getElementById('list-empty');
+  if (box == null) return;
+  const isBooting = !lastFetchedAt.has(state.kind) && state.pulls.length === 0;
+  const isSearching = needle !== '' && isSemanticLoading;
+  const isAwaiting = count === 0 && state.pulls.length > 0 && isAwaitingMergeStates();
+  const kind = count > 0 || isBooting ? '' : isSearching ? 'searching' : isAwaiting ? 'checking' : state.pulls.length === 0 ? 'empty' : needle !== '' ? 'no-results' : 'filtered';
+  if (box.dataset.kind === kind) return;
+  box.dataset.kind = kind;
+  const filterLabel = state.smartFilter === 'ready' ? 'Ready' : state.smartFilter === 'attention' ? 'Unready' : state.smartFilter;
+  const views: Record<string, string> = {
+    searching: `${icon('search', 'empty-ico')}<b>Searching…</b><span>Looking for “${escapeHtml(needle)}”</span><div class="empty-skel"><span></span><span></span><span></span></div>`,
+    checking: `<span class="spinner"></span><b>Checking merge status…</b>`,
+    'no-results': `${icon('search', 'empty-ico')}<b>No pull requests match “${escapeHtml(needle)}”</b><span>Try another word, or clear the filter</span><button type="button" class="ghost" data-empty-action="clear-filter">Clear filter <kbd>esc</kbd></button>`,
+    filtered: `${icon('circleCheck', 'empty-ico')}<b>Nothing is ${escapeHtml(filterLabel)} right now</b><span>Everything else is still in All</span><button type="button" class="ghost" data-empty-action="show-all">Show all <kbd>⌥</kbd><kbd>0</kbd></button>`,
+    empty: `${icon('circleCheck', 'empty-ico')}<b>Inbox zero</b><span>No open pull requests in this view</span>`,
+  };
+  box.innerHTML = kind === '' ? '' : `<div class="list-empty-inner">${views[kind]}</div>`;
+  box.hidden = kind === '';
 }
 
 function renderList(): void {
@@ -549,7 +582,8 @@ function renderList(): void {
   }
   dom.list.classList.toggle('grouped', isGrouped && groups.length > 0);
   virtualList.setRows(rows);
-  virtualList.highlightKey(state.selectedId);
+  renderListEmpty(pulls.length, needle);
+  virtualList.highlightKey(pulls.some((pull) => pull.id === state.selectedId) ? state.selectedId : null);
   document.getElementById('toggle-grouping')?.classList.toggle('active', isGrouped);
   renderCounts();
   renderSmartCounts();
@@ -931,7 +965,9 @@ let lastSelectAt = 0;
 const RAPID_SELECT_MS = 90;
 
 function select(pull: PullRequest): Promise<void> {
+  const previousId = state.selectedId;
   state.selectedId = pull.id;
+  if (previousId != null && previousId !== pull.id && leaving.has(previousId)) scheduleLeave(previousId);
   state.activeFileIndex = -1;
   virtualList.scrollToKey(pull.id);
   virtualList.highlightKey(pull.id);
@@ -1255,6 +1291,7 @@ function summarizeChange(before: PullRequest[], after: PullRequest[]): string {
 }
 
 function manualRefresh(): void {
+  stableOrder.reset();
   const before = queueCache.get(state.kind) ?? [];
   const kind = state.kind;
   const started = Date.now();
@@ -1305,7 +1342,7 @@ function refresh(kind: QueueKind, isForced = false): Promise<void> {
 
 function applyQueue(pulls: PullRequest[]): void {
   const previous = selectedPull();
-  state.pulls = pulls;
+  state.pulls = pulls.filter((pull) => !leaving.has(pull.id)).concat([...leaving.values()].map((entry) => entry.pull));
   renderList();
   const stillThere = previous == null ? undefined : pulls.find((pull) => pull.id === previous.id);
   if (stillThere != null) {
@@ -1329,6 +1366,7 @@ function switchKind(kind: QueueKind): void {
   void scoreWithJev(state.pulls);
   renderRefreshStatus();
   groupsSignature = '';
+  stableOrder.reset();
   void ensureGroups();
   void refresh(kind);
 }
@@ -1483,6 +1521,41 @@ function confirmBulkMerge(pulls: PullRequest[], method: MergeMethod): Promise<bo
   return new Promise((resolve) => dom.bulkConfirm.addEventListener('close', () => resolve(dom.bulkConfirm.returnValue === 'ok'), { once: true }));
 }
 
+const LEAVE_AFTER_MS = 3_000;
+const LEAVE_ANIMATION_MS = 220;
+const leaveTimers = new Map<string, number>();
+
+function markLeaving(pull: PullRequest, label: string): void {
+  leaving.set(pull.id, { pull, label });
+  invalidateList();
+  renderList();
+  scheduleLeave(pull.id);
+}
+
+function scheduleLeave(id: string): void {
+  window.clearTimeout(leaveTimers.get(id));
+  leaveTimers.set(id, window.setTimeout(() => finishLeaving(id), LEAVE_AFTER_MS));
+}
+
+function finishLeaving(id: string): void {
+  if (!leaving.has(id)) return;
+  if (state.selectedId === id) {
+    scheduleLeave(id);
+    return;
+  }
+  const row = virtualList.element(id);
+  const remove = (): void => {
+    leaving.delete(id);
+    leaveTimers.delete(id);
+    state.pulls = state.pulls.filter((candidate) => candidate.id !== id);
+    invalidateList();
+    renderList();
+  };
+  if (row == null || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return remove();
+  row.classList.add('removing');
+  window.setTimeout(remove, LEAVE_ANIMATION_MS);
+}
+
 async function bulkMerge(): Promise<void> {
   const pulls = checkedPulls().filter((pull) => !pull.isDraft && pull.mergeable !== 'CONFLICTING');
   if (pulls.length === 0) return;
@@ -1499,8 +1572,7 @@ async function bulkMerge(): Promise<void> {
       await mergePull(pull, method);
       merged += 1;
       state.checkedIds.delete(pull.id);
-      state.pulls = state.pulls.filter((candidate) => candidate.id !== pull.id);
-      renderList();
+      markLeaving(pull, isAllQueued ? 'Queued' : 'Merged');
     } catch (error) {
       failures.push(`#${pull.number}: ${errorMessage(error).split('\n')[0]}`);
     }
@@ -1570,9 +1642,7 @@ async function mergeSelected(): Promise<void> {
   try {
     const result = await mergePull(pull, method);
     toast(result.trim().split('\n').at(-1) ?? (isQueued ? `#${pull.number} added to the merge queue` : `Merged #${pull.number}`));
-    movePull(1);
-    state.pulls = state.pulls.filter((candidate) => candidate.id !== pull.id);
-    renderList();
+    markLeaving(pull, isQueued ? 'Queued' : 'Merged');
     void refresh(state.kind);
   } catch (error) {
     toast(errorMessage(error), true);
@@ -2030,6 +2100,10 @@ document.addEventListener('keydown', (event) => {
   const target = event.target;
   const isTyping = target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable);
   if (isTyping && (event.key === 'Escape' || (event.key === 'Enter' && !event.metaKey))) {
+    if (event.key === 'Escape' && target === dom.filter && dom.filter.value !== '' && filteredPulls().length === 0) {
+      dom.filter.value = '';
+      dom.filter.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     (target as HTMLElement).blur();
     event.preventDefault();
     return;
@@ -2100,6 +2174,13 @@ element('open-help').addEventListener('click', openHelp);
 element('open-github').addEventListener('click', openSelectedOnGitHub);
 element('refresh-button').addEventListener('click', manualRefresh);
 element('open-triage').addEventListener('click', openTriage);
+element('list-empty').addEventListener('click', (event) => {
+  const action = (event.target as HTMLElement).closest<HTMLElement>('[data-empty-action]')?.dataset.emptyAction;
+  if (action === 'clear-filter') {
+    dom.filter.value = '';
+    dom.filter.dispatchEvent(new Event('input', { bubbles: true }));
+  } else if (action === 'show-all') setSmartFilter('all');
+});
 document.querySelectorAll<HTMLElement>('.h-scroll').forEach(attachScrollFade);
 animateDialogCancel();
 watchKbdGlyphs();
