@@ -2024,7 +2024,7 @@ const COMMANDS: Command[] = [
   { id: 'check-all', section: 'Select', title: 'Select all visible', keys: ['⌘a'], run: selectAllVisible },
   { id: 'check-ready', section: 'Select', title: 'Select all ready', aliases: 'green approved', keys: ['⇧r'], run: selectReady },
   { id: 'check-unready', section: 'Select', title: 'Select all unready (conflicts, failing, not approved)', aliases: 'attention broken red yellow fix bulk', keys: ['⇧u'], run: selectUnready },
-  { id: 'check-clear', section: 'Select', title: 'Clear selection', keys: ['esc'], run: clearChecked, isEnabled: () => state.checkedIds.size > 0 },
+  { id: 'check-clear', section: 'Select', title: 'Clear selection', keys: ['esc', '⌫'], run: clearChecked, isEnabled: () => state.checkedIds.size > 0 },
   { id: 'bulk-approve', section: 'Select', title: 'Approve selected', aliases: 'bulk lgtm', keys: ['⇧a'], run: () => void bulkApprove(), isEnabled: () => state.checkedIds.size > 0 },
 
   { id: 'view-review', section: 'Views', title: 'Go to Review requested', keys: ['⌘1', 'g r'], run: () => switchKind('review') },

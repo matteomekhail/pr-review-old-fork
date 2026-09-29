@@ -8,6 +8,7 @@ const SYMBOLS: Record<string, string> = {
   '↓': 'down',
   '←': 'left',
   '→': 'right',
+  '⌫': 'backspace',
 };
 
 function normalize(kbd: HTMLElement): void {
