@@ -269,7 +269,7 @@ function scheduleSemanticSearch(): void {
 }
 
 const stableOrder = new StableOrder();
-const leaving = new Map<string, { pull: PullRequest; label: string }>();
+const leaving = new Map<string, { pull: PullRequest; label: string; isPending?: boolean }>();
 let listCacheKey = '';
 let filteredCache: PullRequest[] = [];
 let visibleCache: PullRequest[] = [];
@@ -536,7 +536,7 @@ const virtualList = new VirtualList(dom.list);
 function rowHtml(pull: PullRequest, primaryRepo: string | undefined, needle: string): string {
   const isChecked = state.checkedIds.has(pull.id);
   const exit = leaving.get(pull.id);
-  return `<li data-key="${pull.id}" data-id="${pull.id}" class="${pull.id === state.selectedId ? 'selected' : ''}${isChecked ? ' checked' : ''}${pull.queueEntry != null ? ' queued' : ''}${exit != null ? ' leaving' : ''}"${exit != null ? ` data-leaving="${escapeHtml(exit.label)}"` : ''}>
+  return `<li data-key="${pull.id}" data-id="${pull.id}" class="${pull.id === state.selectedId ? 'selected' : ''}${isChecked ? ' checked' : ''}${pull.queueEntry != null ? ' queued' : ''}${exit != null ? ' leaving' : ''}${exit?.isPending === true ? ' pending' : ''}${failedMerges.has(pull.id) ? ' merge-failed' : ''}"${exit != null ? ` data-leaving="${escapeHtml(exit.label)}"` : ''}>
         <span class="check-box" data-check="${pull.id}" role="checkbox" aria-checked="${isChecked}" title="Select  E / ⇧V"></span>
         ${statusIcon(pull)}
         <span class="id" title="${escapeHtml(pull.repository.nameWithOwner)}">${repoTag(pull, primaryRepo)}#${pull.number}</span>
@@ -844,7 +844,7 @@ function renderDetailMeta(pull: PullRequest): void {
     chip(`<code>${escapeHtml(pull.headRefName)}</code><span class="arrow">→</span><code>${escapeHtml(pull.baseRefName)}</code>`, `${pull.headRefName} → ${pull.baseRefName}`, 'plain branch'),
     `<span class="status-summary" title="${escapeHtml(summary)}">${statusIcon(pull)}</span>`,
   ].join('');
-  dom.merge.disabled = pull.isDraft || pull.mergeable === 'CONFLICTING' || pull.queueEntry != null;
+  dom.merge.disabled = pull.isDraft || pull.mergeable === 'CONFLICTING' || pull.queueEntry != null || leaving.has(pull.id);
   const isOwn = isOwnPull(pull);
   dom.approve.disabled = isOwn;
   dom.approve.title = isOwn ? 'You can’t approve your own pull request' : 'Approve  A';
@@ -1527,6 +1527,31 @@ function confirmBulkMerge(pulls: PullRequest[], method: MergeMethod): Promise<bo
 const LEAVE_AFTER_MS = 3_000;
 const LEAVE_ANIMATION_MS = 220;
 const leaveTimers = new Map<string, number>();
+const failedMerges = new Map<string, number>();
+
+function markPending(pull: PullRequest, label: string): void {
+  leaving.set(pull.id, { pull, label, isPending: true });
+  window.clearTimeout(leaveTimers.get(pull.id));
+  invalidateList();
+  renderList();
+  if (selectedPull()?.id === pull.id) renderDetailMeta(pull);
+}
+
+function rollbackPending(pull: PullRequest): void {
+  leaving.delete(pull.id);
+  window.clearTimeout(leaveTimers.get(pull.id));
+  leaveTimers.delete(pull.id);
+  invalidateList();
+  renderList();
+  failedMerges.set(pull.id, Date.now());
+  invalidateList();
+  renderList();
+  window.setTimeout(() => {
+    failedMerges.delete(pull.id);
+    virtualList.element(pull.id)?.classList.remove('merge-failed');
+  }, 4_000);
+  if (selectedPull()?.id === pull.id) renderDetailMeta(pull);
+}
 
 function markLeaving(pull: PullRequest, label: string): void {
   leaving.set(pull.id, { pull, label });
@@ -1541,7 +1566,7 @@ function scheduleLeave(id: string): void {
 }
 
 function finishLeaving(id: string): void {
-  if (!leaving.has(id)) return;
+  if (!leaving.has(id) || leaving.get(id)?.isPending === true) return;
   if (state.selectedId === id) {
     scheduleLeave(id);
     return;
@@ -1559,31 +1584,41 @@ function finishLeaving(id: string): void {
   window.setTimeout(remove, LEAVE_ANIMATION_MS);
 }
 
+const MERGE_CONCURRENCY = 3;
+
+async function runMerge(pull: PullRequest, isQueued: boolean): Promise<string | null> {
+  markPending(pull, isQueued ? 'Queueing…' : 'Merging…');
+  try {
+    await mergePull(pull, MERGE_METHOD);
+    markLeaving(pull, isQueued ? 'Queued' : 'Merged');
+    return null;
+  } catch (error) {
+    rollbackPending(pull);
+    return `#${pull.number}: ${errorMessage(error).split('\n')[0]}`;
+  }
+}
+
 async function bulkMerge(): Promise<void> {
-  const pulls = checkedPulls().filter((pull) => !pull.isDraft && pull.mergeable !== 'CONFLICTING');
+  const pulls = checkedPulls().filter((pull) => !pull.isDraft && pull.mergeable !== 'CONFLICTING' && !leaving.has(pull.id));
   if (pulls.length === 0) return;
-  const method = MERGE_METHOD;
   const queueFlags = await Promise.all(pulls.map(usesMergeQueue));
   const isAllQueued = queueFlags.every(Boolean);
-  if (!isAllQueued && !(await confirmBulkMerge(pulls, method))) return;
-  dom.bulkMerge.disabled = true;
-  const failures: string[] = [];
-  let merged = 0;
-  for (const [index, pull] of pulls.entries()) {
-    toast(`${isAllQueued ? 'Queueing' : 'Merging'} ${index + 1}/${pulls.length}: #${pull.number}`);
-    try {
-      await mergePull(pull, method);
-      merged += 1;
-      state.checkedIds.delete(pull.id);
-      markLeaving(pull, isAllQueued ? 'Queued' : 'Merged');
-    } catch (error) {
-      failures.push(`#${pull.number}: ${errorMessage(error).split('\n')[0]}`);
-    }
-  }
+  if (!isAllQueued && !(await confirmBulkMerge(pulls, MERGE_METHOD))) return;
   const verb = isAllQueued ? 'Queued' : 'Merged';
-  toast(failures.length === 0 ? `${verb} ${merged} pull requests` : `${verb} ${merged}, failed ${failures.length} — ${failures.join(' · ')}`, failures.length > 0);
-  dom.bulkMerge.disabled = false;
-  renderBulkBar();
+  clearChecked();
+  pulls.forEach((pull, index) => markPending(pull, queueFlags[index] ? 'Queueing…' : 'Merging…'));
+  toast(`${isAllQueued ? 'Queueing' : 'Merging'} ${pulls.length} pull request${pulls.length === 1 ? '' : 's'}…`);
+  const failures: string[] = [];
+  const work = pulls.map((pull, index) => ({ pull, isQueued: queueFlags[index] ?? false }));
+  const worker = async (): Promise<void> => {
+    for (let next = work.shift(); next != null; next = work.shift()) {
+      const failure = await runMerge(next.pull, next.isQueued);
+      if (failure != null) failures.push(failure);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(MERGE_CONCURRENCY, pulls.length) }, worker));
+  const done = pulls.length - failures.length;
+  toast(failures.length === 0 ? `${verb} ${done} pull request${done === 1 ? '' : 's'}` : `${verb} ${done}, failed ${failures.length} — ${failures.join(' · ')}`, failures.length > 0);
   void refresh(state.kind);
 }
 
@@ -1637,20 +1672,13 @@ function confirmMerge(pull: PullRequest, method: MergeMethod): Promise<boolean> 
 
 async function mergeSelected(): Promise<void> {
   const pull = selectedPull();
-  if (pull == null || dom.merge.disabled) return;
-  const method = MERGE_METHOD;
+  if (pull == null || dom.merge.disabled || leaving.has(pull.id)) return;
   const isQueued = await usesMergeQueue(pull);
-  if (!isQueued && !(await confirmMerge(pull, method))) return;
-  dom.merge.disabled = true;
-  try {
-    const result = await mergePull(pull, method);
-    toast(result.trim().split('\n').at(-1) ?? (isQueued ? `#${pull.number} added to the merge queue` : `Merged #${pull.number}`));
-    markLeaving(pull, isQueued ? 'Queued' : 'Merged');
-    void refresh(state.kind);
-  } catch (error) {
-    toast(errorMessage(error), true);
-    dom.merge.disabled = false;
-  }
+  if (!isQueued && !(await confirmMerge(pull, MERGE_METHOD))) return;
+  const failure = await runMerge(pull, isQueued);
+  if (failure != null) toast(failure.replace(/^#\d+: /, ''), true);
+  else toast(isQueued ? `#${pull.number} added to the merge queue` : `Merged #${pull.number}`);
+  void refresh(state.kind);
 }
 
 function toggleStyle(): void {

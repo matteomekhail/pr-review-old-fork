@@ -35,7 +35,12 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   review_context: () => { throw new Error('offline harness'); },
   readiness: () => { throw new Error('offline harness'); },
   approve: () => 'ok',
-  merge: () => 'ok',
+  merge: async (args) => {
+    await new Promise((resolve) => setTimeout(resolve, Number(new URLSearchParams(location.search).get('mergeMs') ?? 0)));
+    const failing = (new URLSearchParams(location.search).get('failMerge') ?? '').split(',').filter(Boolean).map(Number);
+    if (failing.includes(Number(args.number))) throw new Error('Pull request is not mergeable: required status check "ci" is failing');
+    return 'ok';
+  },
   open_in_browser: (args) => { (window as unknown as { __opened: string[] }).__opened = [...((window as unknown as { __opened?: string[] }).__opened ?? []), String(args.url)]; return undefined; },
 };
 
@@ -44,5 +49,5 @@ export async function invoke<T>(command: string, args: Record<string, unknown> =
   const handler = handlers[command];
   if (handler == null) throw new Error(`harness: unhandled command ${command}`);
   if (LATENCY_MS > 0) await new Promise((resolve) => setTimeout(resolve, LATENCY_MS));
-  return handler(args) as T;
+  return (await handler(args)) as T;
 }
