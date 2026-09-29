@@ -23,7 +23,12 @@ function toEntry(theme: AppTheme): ThemeEntry {
   return { id: theme.id, name: theme.name, mode: theme.mode, swatch: [theme.colors.bg, theme.colors.accent, theme.colors.ok, theme.colors.bad, theme.colors.wait] };
 }
 
-const ENTRIES: readonly ThemeEntry[] = [{ id: SYSTEM_THEME_ID, name: 'System (follow macOS)', mode: 'auto', swatch: ['#0f1011', '#ffffff'] }, ...THEMES.map(toEntry)];
+const MODE_ORDER: Record<string, number> = { auto: 0, dark: 1, light: 2 };
+const ENTRIES: readonly ThemeEntry[] = [{ id: SYSTEM_THEME_ID, name: 'System (follow macOS)', mode: 'auto', swatch: ['#0f1011', '#ffffff'] }, ...THEMES.map(toEntry)]
+  .map((entry, index) => ({ entry, index }))
+  .sort((left, right) => (MODE_ORDER[left.entry.mode] ?? 9) - (MODE_ORDER[right.entry.mode] ?? 9) || left.index - right.index)
+  .map(({ entry }) => entry);
+const SECTION_LABELS: Record<string, string> = { auto: '', dark: 'Dark', light: 'Light' };
 
 export class ThemePicker {
   private readonly dialog: HTMLDialogElement;
@@ -69,8 +74,13 @@ export class ThemePicker {
     this.results = ENTRIES.filter((entry) => query === '' || `${entry.name} ${entry.mode}`.toLowerCase().includes(query));
     this.activeIndex = Math.min(activeIndex, Math.max(0, this.results.length - 1));
     const current = this.hooks.current();
+    let section = '';
     this.list.innerHTML = this.results
-      .map((entry, index) => `<button type="button" class="theme-option${index === this.activeIndex ? ' active' : ''}" data-index="${index}" role="option"><span class="current">${entry.id === current ? '✓' : ''}</span><span class="swatch">${entry.swatch.map((color) => `<i style="background:${color}"></i>`).join('')}</span><span>${escapeHtml(entry.name)}</span><span class="mode">${entry.mode}</span></button>`)
+      .map((entry, index) => {
+        const label = SECTION_LABELS[entry.mode] ?? '';
+        const heading = label !== '' && label !== section ? `<div class="theme-section">${(section = label)}</div>` : '';
+        return `${heading}<button type="button" class="theme-option${index === this.activeIndex ? ' active' : ''}" data-index="${index}" role="option"><span class="current">${entry.id === current ? '✓' : ''}</span><span class="swatch">${entry.swatch.map((color) => `<i style="background:${color}"></i>`).join('')}</span><span>${escapeHtml(entry.name)}</span></button>`;
+      })
       .join('');
     this.previewActive();
   }

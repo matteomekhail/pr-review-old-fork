@@ -557,12 +557,12 @@ function renderListEmpty(count: number, needle: string): void {
   const filterLabel = state.smartFilter === 'ready' ? 'Ready' : state.smartFilter === 'attention' ? 'Unready' : state.smartFilter;
   const views: Record<string, string> = {
     searching: `${icon('search', 'empty-ico')}<b>Searching…</b><span>Looking for “${escapeHtml(needle)}”</span><div class="empty-skel"><span></span><span></span><span></span></div>`,
-    checking: `<span class="spinner"></span><b>Checking merge status…</b>`,
+    checking: `<div class="empty-overlay"><b>Checking merge status…</b><span>Asking GitHub which PRs are ready to merge</span></div>`,
     'no-results': `${icon('search', 'empty-ico')}<b>No pull requests match “${escapeHtml(needle)}”</b><span>Try another word, or clear the filter</span><button type="button" class="ghost" data-empty-action="clear-filter">Clear filter <kbd>esc</kbd></button>`,
     filtered: `${icon('circleCheck', 'empty-ico')}<b>Nothing is ${escapeHtml(filterLabel)} right now</b><span>Everything else is still in All</span><button type="button" class="ghost" data-empty-action="show-all">Show all <kbd>⌥</kbd><kbd>0</kbd></button>`,
     empty: `${icon('circleCheck', 'empty-ico')}<b>Inbox zero</b><span>No open pull requests in this view</span>`,
   };
-  box.innerHTML = kind === '' ? '' : `<div class="list-empty-inner">${views[kind]}</div>`;
+  box.innerHTML = kind === '' ? '' : kind === 'checking' ? `<div class="list-checking">${listSkeleton()}${views[kind]}</div>` : `<div class="list-empty-inner">${views[kind]}</div>`;
   box.hidden = kind === '';
 }
 
@@ -623,7 +623,10 @@ function syncDetailVisibility(pulls: PullRequest[]): void {
   if (pulls.length === 0 && state.pulls.length > 0 && isAwaitingMergeStates()) {
     dom.pr.hidden = true;
     dom.empty.hidden = false;
-    if (!dom.empty.classList.contains('is-loading')) dom.empty.innerHTML = '<div class="empty-pending"><span class="spinner"></span>Checking merge status…</div>';
+    if (!dom.empty.classList.contains('is-loading')) {
+      dom.empty.classList.add('is-loading');
+      dom.empty.innerHTML = `<div class="boot-skeleton" aria-busy="true">${bootSkeleton()}</div>`;
+    }
     return;
   }
   clearBootSkeletons();

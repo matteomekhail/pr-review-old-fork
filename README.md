@@ -20,7 +20,7 @@ A fast, keyboard-first macOS app for reviewing and merging GitHub pull requests.
 - **Smart groups (Jev):** `T` groups related PRs into efforts, such as a run of lib extractions or UI refactors. Groups are ordered by average readiness and each can be collapsed or selected as a whole for bulk merge.
 - **Conversation:** PR comments and reviews appear under the description, humans and bots alike (Devin, Perry, GitHub Actions…), with review verdicts highlighted. `⇧B` hides bot comments.
 - **Merge queue:** PRs already in a queue show a yellow marker with their position, and queued merges skip the confirmation.
-- **Themes:** press `T` for a live-preview picker with 20 IDE themes (Catppuccin Mocha/Macchiato/Frappé/Latte, Tokyo Night, Dracula, One Dark Pro, GitHub Dark/Light, Nord, Gruvbox, Rosé Pine, Solarized, Monokai, Night Owl, Kanagawa, Vesper) or follow macOS. Syntax highlighting in diffs uses the matching editor theme.
+- **Themes:** press `T` for a live-preview picker with 45 themes grouped into Dark (29) and Light (16), or follow macOS. Includes Catppuccin, Tokyo Night, Dracula, One Dark/Light, GitHub (dark, dimmed, light, high contrast), VS Code Dark+/Light+, Nord, Gruvbox, Rosé Pine (main, Moon, Dawn), Solarized, Ayu, Everforest, Kanagawa, Material, Night Owl, Monokai, Poimandres, Synthwave '84, Vitesse, Min and Vesper. Diff syntax colours use the matching editor theme.
 - **Bulk actions:** select with `E` / `⇧J` / `⇧R`, then approve or merge in sequence with per-PR error reporting.
 - **Keyboard:** Linear-style single keys, VS Code chords, and vim motions. `?` lists every shortcut.
 
