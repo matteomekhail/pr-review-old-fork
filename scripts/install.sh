@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_NAME="PR Review"
 DEST="/Applications/$APP_NAME.app"
-REPO="sunwrobert/pr-review"
+REPO="matteomekhail/pr-review"
 
 if [ "${1:-}" != "--from-source" ] && command -v gh >/dev/null; then
   TMP="$(mktemp -d)"
@@ -29,7 +29,7 @@ if [ -f package.json ] && grep -q '"name": "pr-review"' package.json; then
   SRC="$(pwd)"
 else
   SRC="${PR_REVIEW_DIR:-$HOME/.pr-review}"
-  if [ -d "$SRC/.git" ]; then git -C "$SRC" pull --ff-only -q; else gh repo clone sunwrobert/pr-review "$SRC" -- -q; fi
+  if [ -d "$SRC/.git" ]; then git -C "$SRC" pull --ff-only -q; else gh repo clone matteomekhail/pr-review "$SRC" -- -q; fi
 fi
 
 cd "$SRC"

@@ -31,7 +31,7 @@ All GitHub access goes through your existing [GitHub CLI](https://cli.github.com
 ## Install
 
 ```bash
-gh repo clone sunwrobert/pr-review /tmp/pr-review-src -- -q && bash /tmp/pr-review-src/scripts/install.sh
+gh repo clone matteomekhail/pr-review /tmp/pr-review-src -- -q && bash /tmp/pr-review-src/scripts/install.sh
 ```
 
 This downloads the latest signed release into `/Applications`. From then on the app updates itself: it checks GitHub Releases at launch, when focused and every 30 minutes, downloads and installs in the background, and shows an **Update** pill (or `⌘⇧U`) to restart into the new version. Use `--from-source` to build locally instead.
@@ -47,7 +47,7 @@ One-time setup: add the updater private key as repo secrets `TAURI_SIGNING_PRIVA
 One step: builds from source and installs to `/Applications` (re-run to update):
 
 ```bash
-gh repo clone sunwrobert/pr-review /tmp/pr-review-src -- -q && bash /tmp/pr-review-src/scripts/install.sh
+gh repo clone matteomekhail/pr-review /tmp/pr-review-src -- -q && bash /tmp/pr-review-src/scripts/install.sh
 ```
 
 From a checkout, `bun run install:app` does the same.

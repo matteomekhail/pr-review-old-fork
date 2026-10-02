@@ -50,7 +50,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENFOUU4NDk4N0RFOTE4Q0MKUldUTUdPbDltSVNlemsyVXRyOTVxYkV6cWRDVHBteFhHUGZ0QUNjenI1cEoyN0hLc0lWV3Zmb1MK",
       "endpoints": [
-        "https://github.com/sunwrobert/pr-review/releases/latest/download/latest.json"
+        "https://github.com/matteomekhail/pr-review/releases/latest/download/latest.json"
       ]
     }
   }
